@@ -1,0 +1,48 @@
+.sortable-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sortable-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  margin-bottom: 8px;
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  cursor: grab;
+  transition: all 0.2s ease-in-out;
+}
+
+.sortable-item:hover {
+  border-color: var(--color-primary);
+}
+
+.sortable-item.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.sortable-item.drag-over {
+  transform: scale(1.02);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.25);
+}
+
+.drag-handle {
+  margin-right: 12px;
+  color: var(--color-secondary);
+  cursor: grab;
+  user-select: none;
+}
+
+.sortable-content {
+  flex: 1;
+}
+
+/* During drag operation */
+.sortable-item.dragging .drag-handle {
+  cursor: grabbing;
+} 

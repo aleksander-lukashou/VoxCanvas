@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "hono": "^3.0.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "hono": "^3.0.0"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250224.0",
     "@vitejs/plugin-react": "^4.0.0",
     "vite": "^4.3.9"
   }
