@@ -1,9 +1,17 @@
 # Client Side Tool Calling with the OpenAI WebRTC Realtime API
 
-This project is a [Cloudflare Workers](https://developers.cloudflare.com) app using [Hono](https://honojs.dev) to relay the [OpenAI Realtime API](https://platform.openai.com/docs/api-reference/realtime) over WebRTC. The main files are just [static assets](https://developers.cloudflare.com/workers/static-assets/).
+This project is a [Cloudflare Workers](https://developers.cloudflare.com) app using [Hono](https://honojs.dev) to relay the [OpenAI Realtime API](https://platform.openai.com/docs/api-reference/realtime) over WebRTC. The main files are just static assets.
 
-[<img src="https://img.youtube.com/vi/TcOytsfva0o/0.jpg">](https://youtu.be/TcOytsfva0o "Client Side Tool Calling with the OpenAI WebRTC Realtime API")
+## Project Overview
 
+This application enables real-time web page manipulation through voice commands using GPT-4o Realtime. The AI assistant can:
+
+- **Style the page**: Change colors, modify text styles
+- **Create elements**: Add text, buttons, inputs, dropdowns
+- **Manipulate elements**: Insert, move, reorder, or delete elements
+- **Debug**: List elements and get element information
+
+All created elements receive unique IDs for easy reference in subsequent operations.
 
 ## Develop
 
@@ -19,16 +27,4 @@ Run local server
 
 ```bash
 npm run dev
-```
-
-## Deploy
-
-Upload your secret
-
-```bash
-npx wrangler secret put OPENAI_API_KEY
-```
-
-```bash
-npm run deploy
 ```
