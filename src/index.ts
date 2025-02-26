@@ -6,7 +6,7 @@ app.use(cors());
 
 const DEFAULT_INSTRUCTIONS = `You are helpful assistant and have some tools installed.
 You can get the HTML of the page.
-You can change the background color of the page or text color, text and the order of the elements.
+You can change the style or order of the elements.
 You can create new elements on the page: paragraphs, buttons, and inputs.
 You can delete elements from the page.
 No yapping.
