@@ -28,3 +28,8 @@ Run local server
 ```bash
 npm run dev
 ```
+
+In the separate terminal
+```bash
+npx wrangler dev
+```

@@ -1,6 +1,101 @@
+import { createFunctions, toolDefinitions, generateUniqueId } from './functions';
+
 export function setupWebRTC(contentElement, callbacks) {
-    // Create a WebRTC Agent
-    const peerConnection = new RTCPeerConnection();
+    // Create a WebRTC Agent with configuration for better stability
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ],
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+      iceCandidatePoolSize: 10
+    });
+  
+    // Track connection state to manage reconnection
+    let connectionActive = false;
+    let dataChannel = null;
+  
+    // Import functions from the functions module
+    const fns = createFunctions(callbacks);
+  
+    // Create data channel with better reliability settings
+    function createDataChannel() {
+      dataChannel = peerConnection.createDataChannel('oai-events', {
+        ordered: true,           // Guaranteed delivery order
+        maxRetransmits: 3        // Retry up to 3 times before failing
+      });
+      
+      setupDataChannelEventListeners();
+      return dataChannel;
+    }
+  
+    function setupDataChannelEventListeners() {
+      dataChannel.addEventListener('open', handleDataChannelOpen);
+      dataChannel.addEventListener('message', handleDataChannelMessage);
+      dataChannel.addEventListener('close', () => {
+        console.log('Data channel closed');
+        connectionActive = false;
+        // Attempt to reconnect after a short delay if disconnect was not intentional
+        if (!peerConnection.connectionClosed) {
+          setTimeout(() => {
+            if (!connectionActive) {
+              console.log("Attempting to reestablish data channel");
+              createDataChannel();
+            }
+          }, 2000);
+        }
+      });
+      dataChannel.addEventListener('error', (error) => {
+        console.error('Data channel error:', error);
+      });
+    }
+  
+    function handleDataChannelOpen(ev) {
+      console.log('Opening data channel', ev);
+      connectionActive = true;
+      configureData();
+      if (callbacks.onConnected) {
+        callbacks.onConnected();
+      }
+    }
+  
+    async function handleDataChannelMessage(ev) {
+      try {
+        const msg = JSON.parse(ev.data);
+        // Handle function calls
+        if (msg.type === 'response.function_call_arguments.done') {
+          const fn = fns[msg.name];
+          if (fn !== undefined) {
+            console.log(`Calling local function ${msg.name} with ${msg.arguments}`);
+            const args = JSON.parse(msg.arguments);
+            const result = await fn(args);
+            console.log('result', result);
+            
+            // Check if connection is still active before sending
+            if (dataChannel && dataChannel.readyState === 'open') {
+              // Let OpenAI know that the function has been called and share it's output
+              const event = {
+                type: 'conversation.item.create',
+                item: {
+                  type: 'function_call_output',
+                  call_id: msg.call_id, // call_id from the function_call message
+                  output: JSON.stringify(result), // result of the function
+                },
+              };
+              dataChannel.send(JSON.stringify(event));
+              // Have assistant respond after getting the results
+              dataChannel.send(JSON.stringify({type:"response.create"}));
+            } else {
+              console.error("Data channel closed, can't send function result");
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error handling message:', error);
+      }
+    }
   
     // On inbound audio add to page
     peerConnection.ontrack = (event) => {
@@ -10,33 +105,32 @@ export function setupWebRTC(contentElement, callbacks) {
       document.body.appendChild(el);
     };
   
-    const dataChannel = peerConnection.createDataChannel('oai-events');
+    // Create initial data channel
+    dataChannel = createDataChannel();
     
-    // Define all your functions here, but modify them to use React state
-    const fns = {
-      getPageHTML: () => {
-        return { success: true, html: document.documentElement.outerHTML };
-      },
-      changeBackgroundColor: ({ color }) => {
-        document.body.style.backgroundColor = color;
-        return { success: true, color };
-      },
-      changeTextColor: ({ color }) => {
-        document.body.style.color = color;
-        return { success: true, color };
-      },
-      addText: ({ text, elementId }) => {
-        const newElement = {
-          id: elementId || generateUniqueId('text'),
-          type: 'p',
-          content: text
-        };
+    // Add connection state monitoring
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', peerConnection.iceConnectionState);
+      if (callbacks.onConnectionStateChange) {
+        callbacks.onConnectionStateChange(peerConnection.iceConnectionState);
+      }
+      
+      // Handle reconnection on failed/disconnected states
+      if (peerConnection.iceConnectionState === 'disconnected' || 
+          peerConnection.iceConnectionState === 'failed') {
+        connectionActive = false;
         
-        callbacks.onElementAdd(newElement);
-        return { success: true, createdElementId: newElement.id };
-      },
-      // Convert all your other functions similarly
-      // ...
+        // Only try to reconnect if not intentionally closed
+        if (!peerConnection.connectionClosed) {
+          console.log("Connection issues detected, will try to recover...");
+          
+          // Try to restart ICE
+          peerConnection.restartIce && peerConnection.restartIce();
+        }
+      } else if (peerConnection.iceConnectionState === 'connected' ||
+                 peerConnection.iceConnectionState === 'completed') {
+        connectionActive = true;
+      }
     };
   
     function configureData() {
@@ -45,52 +139,17 @@ export function setupWebRTC(contentElement, callbacks) {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
-          tools: [
-            // Your tool definitions
-            // ...
-          ],
+          tools: toolDefinitions,
         },
       };
       dataChannel.send(JSON.stringify(event));
     }
   
-    // Add this to your setupWebRTC function - PLACE YOUR CODE HERE
-    dataChannel.addEventListener('open', (ev) => {
-      console.log('Opening data channel', ev);
-      configureData();
-    });
-  
-    dataChannel.addEventListener('message', async (ev) => {
-      const msg = JSON.parse(ev.data);
-      // Handle function calls
-      if (msg.type === 'response.function_call_arguments.done') {
-        const fn = fns[msg.name];
-        if (fn !== undefined) {
-          console.log(`Calling local function ${msg.name} with ${msg.arguments}`);
-          const args = JSON.parse(msg.arguments);
-          const result = await fn(args);
-          console.log('result', result);
-          // Let OpenAI know that the function has been called and share it's output
-          const event = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'function_call_output',
-              call_id: msg.call_id, // call_id from the function_call message
-              output: JSON.stringify(result), // result of the function
-            },
-          };
-          dataChannel.send(JSON.stringify(event));
-          // Have assistant respond after getting the results
-          dataChannel.send(JSON.stringify({type:"response.create"}));
-        }
-      }
-    });
-  
-    // Capture microphone
+    // Capture microphone and establish connection
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       // Add microphone to PeerConnection
       stream.getTracks().forEach((track) => peerConnection.addTransceiver(track, { direction: 'sendrecv' }));
-  
+
       peerConnection.createOffer().then((offer) => {
         peerConnection.setLocalDescription(offer);
         fetch('/session')
@@ -117,13 +176,22 @@ export function setupWebRTC(contentElement, callbacks) {
               });
           });
       });
+    }).catch(error => {
+      console.error('Error accessing microphone:', error);
+      if (callbacks.onConnectionStateChange) {
+        callbacks.onConnectionStateChange('failed');
+      }
     });
   
-    return peerConnection;
-  }
+    // Modify the return to include a proper close method
+    const originalClose = peerConnection.close;
+    peerConnection.close = function() {
+      peerConnection.connectionClosed = true;
+      if (dataChannel) {
+        dataChannel.close();
+      }
+      originalClose.call(peerConnection);
+    };
   
-  function generateUniqueId(prefix = 'element') {
-    const timestamp = new Date().getTime();
-    const random = Math.floor(Math.random() * 10000);
-    return `${prefix}-${timestamp}-${random}`;
+    return peerConnection;
   }
