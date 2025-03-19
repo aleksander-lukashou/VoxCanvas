@@ -1,6 +1,63 @@
 document.addEventListener('DOMContentLoaded', () => {
 	console.log('DOM fully loaded and parsed');
+	
 	// You could initialize your WebRTC connection here if needed
+	
+	// Create a MutationObserver to watch for added style tags
+	const observer = new MutationObserver((mutations) => {
+		// Process each mutation
+		mutations.forEach(mutation => {
+			// Check for added nodes
+			mutation.addedNodes.forEach(node => {
+				// If it's a style tag, process it immediately
+				if (node.nodeName === 'STYLE') {
+					// Process this specific style tag
+					const styleContent = node.textContent || '';
+					
+					// Parse the style tag to extract ID and style properties
+					const styleRegex = /#([a-zA-Z0-9-_]+)\s*{([^}]*)}/g;
+					let match;
+					
+					while ((match = styleRegex.exec(styleContent)) !== null) {
+						const targetId = match[1];
+						const styleText = match[2];
+						const element = document.getElementById(targetId);
+						
+						if (element) {
+							// Apply styles directly to the element instead of using a style tag
+							styleText.split(';').forEach(prop => {
+								const [key, value] = prop.split(':').map(s => s.trim());
+								if (key && value) {
+									// Apply each style property directly to the element's style
+									element.style[key] = value;
+								}
+							});
+						}
+					}
+					
+					// Remove the style element as we've processed it
+					node.remove();
+				}
+				
+				// Also check for nodes that might contain style tags
+				if (node.nodeType === Node.ELEMENT_NODE) {
+					const styleElements = node.querySelectorAll('style');
+					if (styleElements.length > 0) {
+						// Process these style tags
+						processStyleTags();
+					}
+				}
+			});
+		});
+	});
+	
+	// Start observing the document with the configured parameters
+	observer.observe(document.body, { 
+		childList: true,   // Watch for changes to child nodes
+		subtree: true,     // Watch the entire subtree
+		attributes: false, // No need to watch attributes
+		characterData: false // No need to watch text content changes
+	});
 });
 
 const fns = {
@@ -129,7 +186,7 @@ const fns = {
 			return { success: false, error: 'Element not found' };
 		}
 		
-		// Apply the styles
+		// Apply the styles directly to the element's style property
 		if (styles.fontSize) element.style.fontSize = styles.fontSize;
 		if (styles.fontWeight) element.style.fontWeight = styles.fontWeight;
 		if (styles.textAlign) element.style.textAlign = styles.textAlign;
@@ -138,6 +195,17 @@ const fns = {
 		if (styles.textDecoration) element.style.textDecoration = styles.textDecoration;
 		if (styles.lineHeight) element.style.lineHeight = styles.lineHeight;
 		if (styles.letterSpacing) element.style.letterSpacing = styles.letterSpacing;
+		if (styles.color) element.style.color = styles.color;
+		if (styles.backgroundColor) element.style.backgroundColor = styles.backgroundColor;
+		
+		// Handle any additional properties that weren't explicitly listed
+		Object.keys(styles).forEach(key => {
+			// Skip the ones we've already handled
+			if (!['fontSize', 'fontWeight', 'textAlign', 'fontFamily', 'fontStyle', 
+				  'textDecoration', 'lineHeight', 'letterSpacing', 'color', 'backgroundColor'].includes(key)) {
+				element.style[key] = styles[key];
+			}
+		});
 		
 		return { success: true, elementId, appliedStyles: styles };
 	},
@@ -267,7 +335,38 @@ const fns = {
 		const tempContainer = document.createElement('div');
 		tempContainer.innerHTML = html;
 		
-		// Move all child nodes from the temporary container to the target element
+		// Extract style tags and apply styles properly
+		const styleElements = tempContainer.querySelectorAll('style');
+		styleElements.forEach(styleEl => {
+			const styleContent = styleEl.textContent || '';
+			
+			// Parse the style tag to extract ID and style properties
+			const styleRegex = /#([a-zA-Z0-9-_]+)\s*{([^}]*)}/g;
+			let match;
+			
+			while ((match = styleRegex.exec(styleContent)) !== null) {
+				const targetId = match[1];
+				const styleText = match[2];
+				const element = document.getElementById(targetId);
+				
+				if (element) {
+					// Apply styles directly to the element instead of using a style tag
+					const styleProps = {};
+					styleText.split(';').forEach(prop => {
+						const [key, value] = prop.split(':').map(s => s.trim());
+						if (key && value) {
+							// Apply each style property directly to the element's style
+							element.style[key] = value;
+						}
+					});
+				}
+			}
+			
+			// Remove the style element as we've processed it
+			styleEl.remove();
+		});
+		
+		// Move all remaining child nodes from the temporary container to the target element
 		while (tempContainer.firstChild) {
 			targetElement.appendChild(tempContainer.firstChild);
 		}
@@ -335,6 +434,65 @@ const fns = {
 				text: element.textContent.substring(0, 50) + (element.textContent.length > 50 ? '...' : '')
 			}
 		};
+	},
+	// Add a new function to handle inline text formatting (like bold, italic, etc.)
+	formatTextContent: ({ elementId, format, selection }) => {
+		const element = elementId ? document.getElementById(elementId) : null;
+		if (!element) {
+			return { success: false, error: 'Element not found' };
+		}
+		
+		// Handle styles that apply to the entire element
+		if (format === 'align-left' || format === 'align-center' || format === 'align-right' || format === 'align-justify') {
+			// For alignment, apply to the whole element
+			const alignment = format.replace('align-', '');
+			element.style.textAlign = alignment;
+			return { success: true, elementId, format };
+		}
+		
+		// Handle specific color or font-size for the entire element
+		if (format.startsWith('color-') || format.startsWith('size-')) {
+			if (format.startsWith('color-')) {
+				const color = format.replace('color-', '');
+				element.style.color = color;
+			} else if (format.startsWith('size-')) {
+				const size = format.replace('size-', '');
+				element.style.fontSize = size;
+			}
+			return { success: true, elementId, format };
+		}
+		
+		// Get the current content of the element
+		let content = element.textContent || '';
+		
+		// If a specific selection was provided, apply formatting to that portion only
+		if (selection && selection.start >= 0 && selection.end <= content.length && selection.start < selection.end) {
+			const beforeSelection = content.substring(0, selection.start);
+			const selectedText = content.substring(selection.start, selection.end);
+			const afterSelection = content.substring(selection.end);
+			
+			// Apply the requested formatting
+			let formattedText = selectedText;
+			switch (format) {
+				case 'bold':
+					formattedText = `<strong>${selectedText}</strong>`;
+					break;
+				case 'italic':
+					formattedText = `<em>${selectedText}</em>`;
+					break;
+				case 'underline':
+					formattedText = `<u>${selectedText}</u>`;
+					break;
+				default:
+					return { success: false, error: 'Unsupported format type for selection' };
+			}
+			
+			// Update the element's content with the formatted text
+			element.innerHTML = beforeSelection + formattedText + afterSelection;
+			return { success: true, elementId, format };
+		}
+		
+		return { success: false, error: 'Invalid selection range or unsupported format' };
 	}
 };
 
@@ -666,6 +824,40 @@ function configureData() {
 						},
 						required: ['elementId']
 					}
+				},
+				{
+					type: 'function',
+					name: 'formatTextContent',
+					description: 'Formats text content in an element',
+					parameters: {
+						type: 'object',
+						properties: {
+							elementId: { 
+								type: 'string', 
+								description: 'ID of the element to format' 
+							},
+							format: { 
+								type: 'string', 
+								description: 'Format type: bold, italic, underline for selections; align-left, align-center, align-right, align-justify, color-[value], size-[value] for whole elements' 
+							},
+							selection: { 
+								type: 'object', 
+								description: 'Selection range (only required for bold, italic, underline)',
+								properties: {
+									start: { 
+										type: 'integer', 
+										description: 'Start index of selection' 
+									},
+									end: { 
+										type: 'integer', 
+										description: 'End index of selection' 
+									}
+								},
+								required: ['start', 'end']
+							}
+						},
+						required: ['elementId', 'format']
+					}
 				}
 			],
 		},
@@ -757,4 +949,108 @@ function generateUniqueId(prefix = 'element') {
 	return `${prefix}-${timestamp}-${random}`;
 }
 
-// Then modify the relevant functions to use this helper
+// Add a global style processor that runs periodically to detect and process style tags
+function processStyleTags() {
+	// Get all style tags in the document
+	const styleElements = document.querySelectorAll('style');
+	
+	styleElements.forEach(styleEl => {
+		const styleContent = styleEl.textContent || '';
+		
+		// Parse the style tag to extract ID and style properties
+		const styleRegex = /#([a-zA-Z0-9-_]+)\s*{([^}]*)}/g;
+		let match;
+		
+		while ((match = styleRegex.exec(styleContent)) !== null) {
+			const targetId = match[1];
+			const styleText = match[2];
+			const element = document.getElementById(targetId);
+			
+			if (element) {
+				// Apply styles directly to the element instead of using a style tag
+				styleText.split(';').forEach(prop => {
+					const [key, value] = prop.split(':').map(s => s.trim());
+					if (key && value) {
+						// Apply each style property directly to the element's style
+						element.style[key] = value;
+					}
+				});
+			}
+		}
+		
+		// Remove the style element as we've processed it
+		styleEl.remove();
+	});
+}
+
+// Run the style processor on a regular interval
+setInterval(processStyleTags, 100); // Run every 100ms
+
+// Add a utility function to preprocess text content before it's added
+function preprocessTextContent(content) {
+	// Check if the content contains style tags
+	if (typeof content === 'string' && (content.includes('<style') || content.includes('</style>'))) {
+		// Create a temporary container
+		const tempDiv = document.createElement('div');
+		tempDiv.innerHTML = content;
+		
+		// Find all style tags
+		const styleTags = tempDiv.querySelectorAll('style');
+		
+		// Process each style tag
+		styleTags.forEach(styleTag => {
+			const styleContent = styleTag.textContent || '';
+			
+			// Extract styles and apply them directly
+			const styleRegex = /#([a-zA-Z0-9-_]+)\s*{([^}]*)}/g;
+			let match;
+			
+			while ((match = styleRegex.exec(styleContent)) !== null) {
+				const targetId = match[1];
+				const styleText = match[2];
+				
+				// Apply the style to the target element if it exists
+				setTimeout(() => {
+					const element = document.getElementById(targetId);
+					if (element) {
+						styleText.split(';').forEach(prop => {
+							const [key, value] = prop.split(':').map(s => s.trim());
+							if (key && value) {
+								element.style[key] = value;
+							}
+						});
+					}
+				}, 0); // Use setTimeout to ensure the element exists
+			}
+			
+			// Remove the style tag
+			styleTag.remove();
+		});
+		
+		// Return the content without style tags
+		return tempDiv.innerHTML;
+	}
+	
+	// If no style tags, return the original content
+	return content;
+}
+
+// Modify existing functions to use the preprocessor
+const originalAddText = fns.addText;
+fns.addText = ({ text, elementId }) => {
+	// Preprocess the text content
+	const processedText = preprocessTextContent(text);
+	
+	// Call the original function with the processed text
+	return originalAddText({ text: processedText, elementId });
+};
+
+// Override parseAndAddHTML to use the preprocessor
+const originalParseAndAddHTML = fns.parseAndAddHTML;
+fns.parseAndAddHTML = ({ html, elementId }) => {
+	// Preprocess the HTML content
+	const processedHTML = preprocessTextContent(html);
+	
+	// Call the original function with the processed HTML
+	return originalParseAndAddHTML({ html: processedHTML, elementId });
+};
