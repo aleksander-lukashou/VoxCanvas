@@ -325,54 +325,6 @@ const fns = {
 		return { success: true, deletedElementId: elementId };
 	},
 	
-	parseAndAddHTML: ({ html, elementId }) => {
-		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
-		if (!targetElement) {
-			return { success: false, error: 'Target element not found' };
-		}
-		
-		// Create a temporary container
-		const tempContainer = document.createElement('div');
-		tempContainer.innerHTML = html;
-		
-		// Extract style tags and apply styles properly
-		const styleElements = tempContainer.querySelectorAll('style');
-		styleElements.forEach(styleEl => {
-			const styleContent = styleEl.textContent || '';
-			
-			// Parse the style tag to extract ID and style properties
-			const styleRegex = /#([a-zA-Z0-9-_]+)\s*{([^}]*)}/g;
-			let match;
-			
-			while ((match = styleRegex.exec(styleContent)) !== null) {
-				const targetId = match[1];
-				const styleText = match[2];
-				const element = document.getElementById(targetId);
-				
-				if (element) {
-					// Apply styles directly to the element instead of using a style tag
-					const styleProps = {};
-					styleText.split(';').forEach(prop => {
-						const [key, value] = prop.split(':').map(s => s.trim());
-						if (key && value) {
-							// Apply each style property directly to the element's style
-							element.style[key] = value;
-						}
-					});
-				}
-			}
-			
-			// Remove the style element as we've processed it
-			styleEl.remove();
-		});
-		
-		// Move all remaining child nodes from the temporary container to the target element
-		while (tempContainer.firstChild) {
-			targetElement.appendChild(tempContainer.firstChild);
-		}
-		
-		return { success: true, elementId };
-	},
 	listPageElements: () => {
 		// Get all elements with IDs
 		const elementsWithIds = document.querySelectorAll('[id]');
@@ -493,7 +445,431 @@ const fns = {
 		}
 		
 		return { success: false, error: 'Invalid selection range or unsupported format' };
-	}
+	},
+	// New responsive layout functions
+	createLayoutContainer: ({ containerId, type, elementId }) => {
+		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
+		if (!targetElement) {
+			return { success: false, error: 'Target element not found' };
+		}
+		
+		// Create container element
+		const container = document.createElement('div');
+		
+		// Ensure the container has an ID
+		const actualContainerId = containerId || generateUniqueId('layout');
+		container.id = actualContainerId;
+		
+		// Set layout type
+		container.style.display = type === 'grid' ? 'grid' : 'flex';
+		
+		// Set additional basic styles
+		if (type === 'flex') {
+			container.style.flexWrap = 'wrap';
+			container.style.width = '100%';
+		} else if (type === 'grid') {
+			container.style.width = '100%';
+		}
+		
+		// Add container to the target element
+		targetElement.appendChild(container);
+		
+		return { 
+			success: true, 
+			containerId: actualContainerId, 
+			type
+		};
+	},
+	
+	createColumnLayout: ({ containerId, columns, gap, breakpoints }) => {
+		const container = document.getElementById(containerId);
+		if (!container) {
+			return { success: false, error: `Container with ID ${containerId} not found` };
+		}
+		
+		// Set up flex container
+		container.style.display = 'flex';
+		container.style.flexWrap = 'wrap';
+		container.style.gap = gap || '20px';
+		container.style.width = '100%';
+		
+		// Define number of columns and their widths
+		const numColumns = parseInt(columns) || 3;
+		
+		// Create a unique class name for this layout's columns
+		const columnClassName = `column-${containerId}`;
+		
+		// Create a style element for the column styles
+		const styleElement = document.createElement('style');
+		
+		let columnCss = `.${columnClassName} {
+			flex: 1 1 calc((100% - ${(numColumns-1) * (parseInt(gap) || 20)}px) / ${numColumns});
+		}`;
+		
+		// Add responsive breakpoints
+		if (breakpoints && Array.isArray(breakpoints)) {
+			breakpoints.forEach(bp => {
+				if (bp.maxWidth && bp.columns) {
+					const colWidth = bp.columns === 1 ? '100%' : 
+						`calc((100% - ${(bp.columns-1) * (parseInt(gap) || 20)}px) / ${bp.columns})`;
+					
+					columnCss += `
+					@media (max-width: ${bp.maxWidth}) {
+						.${columnClassName} {
+							flex: 1 1 ${colWidth};
+						}
+					}`;
+				}
+			});
+		}
+		
+		styleElement.textContent = columnCss;
+		document.head.appendChild(styleElement);
+		
+		// Store metadata for this layout
+		container.dataset.layoutType = 'columns';
+		container.dataset.columnClass = columnClassName;
+		
+		return { 
+			success: true, 
+			containerId,
+			columnClassName,
+			numberOfColumns: numColumns
+		};
+	},
+	
+	createGridLayout: ({ containerId, rows, columns, areas, gap }) => {
+		const container = document.getElementById(containerId);
+		if (!container) {
+			return { success: false, error: `Container with ID ${containerId} not found` };
+		}
+		
+		// Set up grid container
+		container.style.display = 'grid';
+		
+		// Set gap
+		if (gap) {
+			container.style.gap = gap;
+		}
+		
+		// Setup grid template columns
+		if (columns) {
+			if (typeof columns === 'number' || !isNaN(parseInt(columns))) {
+				// Equal columns
+				container.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+			} else if (Array.isArray(columns)) {
+				// Custom column widths
+				container.style.gridTemplateColumns = columns.join(' ');
+			} else {
+				// Direct string value
+				container.style.gridTemplateColumns = columns;
+			}
+		}
+		
+		// Setup grid template rows
+		if (rows) {
+			if (typeof rows === 'number' || !isNaN(parseInt(rows))) {
+				// Equal rows
+				container.style.gridTemplateRows = `repeat(${rows}, auto)`;
+			} else if (Array.isArray(rows)) {
+				// Custom row heights
+				container.style.gridTemplateRows = rows.join(' ');
+			} else {
+				// Direct string value
+				container.style.gridTemplateRows = rows;
+			}
+		}
+		
+		// Setup named grid areas
+		if (areas && Array.isArray(areas)) {
+			container.style.gridTemplateAreas = areas
+				.map(row => `"${row}"`)
+				.join(' ');
+		}
+		
+		// Store metadata
+		container.dataset.layoutType = 'grid';
+		
+		return { 
+			success: true, 
+			containerId,
+			gridColumns: columns,
+			gridRows: rows,
+			gridAreas: areas
+		};
+	},
+	
+	addElementToLayout: ({ element, containerId, position }) => {
+		const container = document.getElementById(containerId);
+		if (!container) {
+			return { success: false, error: `Container with ID ${containerId} not found` };
+		}
+		
+		// Create the element based on the type
+		let newElement;
+		if (element.type === 'text') {
+			newElement = document.createElement('p');
+			newElement.textContent = element.content;
+		} else if (element.type === 'div') {
+			newElement = document.createElement('div');
+			if (element.content) newElement.textContent = element.content;
+		} else if (element.type === 'heading') {
+			const level = element.level || 2;
+			newElement = document.createElement(`h${level}`);
+			newElement.textContent = element.content;
+		} else if (element.type === 'button') {
+			newElement = document.createElement('button');
+			newElement.textContent = element.content;
+		} else if (element.type === 'image') {
+			newElement = document.createElement('img');
+			newElement.src = element.src;
+			newElement.alt = element.alt || '';
+		} else if (element.type === 'custom') {
+			newElement = document.createElement(element.tagName || 'div');
+			if (element.content) {
+				newElement.innerHTML = element.content;
+			}
+		} else {
+			// Default to div
+			newElement = document.createElement('div');
+		}
+		
+		// Ensure the element has an ID
+		const elementId = element.id || generateUniqueId(element.type);
+		newElement.id = elementId;
+		
+		// Add classes if provided
+		if (element.className) {
+			newElement.className = element.className;
+		}
+		
+		// Add layout-specific class if it's a column layout
+		if (container.dataset.layoutType === 'columns' && container.dataset.columnClass) {
+			newElement.classList.add(container.dataset.columnClass);
+		}
+		
+		// Position the element in the layout
+		if (position) {
+			if (container.dataset.layoutType === 'grid') {
+				// Grid positioning
+				if (position.row) {
+					newElement.style.gridRow = position.row;
+				}
+				if (position.column) {
+					newElement.style.gridColumn = position.column;
+				}
+				if (position.area) {
+					newElement.style.gridArea = position.area;
+				}
+			} else {
+				// Flex positioning
+				if (position.order) {
+					newElement.style.order = position.order;
+				}
+				if (position.grow) {
+					newElement.style.flexGrow = position.grow;
+				}
+				if (position.shrink) {
+					newElement.style.flexShrink = position.shrink;
+				}
+				if (position.basis) {
+					newElement.style.flexBasis = position.basis;
+				}
+			}
+		}
+		
+		// Add styles if provided
+		if (element.styles && typeof element.styles === 'object') {
+			Object.keys(element.styles).forEach(key => {
+				newElement.style[key] = element.styles[key];
+			});
+		}
+		
+		// Add the element to the container
+		container.appendChild(newElement);
+		
+		return { 
+			success: true, 
+			elementId,
+			containerId
+		};
+	},
+	
+	setResponsiveRules: ({ elementId, rules }) => {
+		const element = document.getElementById(elementId);
+		if (!element) {
+			return { success: false, error: `Element with ID ${elementId} not found` };
+		}
+		
+		if (!rules || !Array.isArray(rules) || rules.length === 0) {
+			return { success: false, error: 'No valid responsive rules provided' };
+		}
+		
+		// Create a unique ID for the style element
+		const styleId = `responsive-${elementId}-${Date.now()}`;
+		
+		// Create a style element for responsive rules
+		const styleElement = document.createElement('style');
+		styleElement.id = styleId;
+		
+		let cssRules = '';
+		
+		// Process each responsive rule
+		rules.forEach((rule, index) => {
+			let mediaQuery = '';
+			
+			// Create the media query
+			if (rule.maxWidth) {
+				mediaQuery = `@media (max-width: ${rule.maxWidth})`;
+			} else if (rule.minWidth) {
+				mediaQuery = `@media (min-width: ${rule.minWidth})`;
+			} else if (rule.media) {
+				mediaQuery = `@media ${rule.media}`;
+			}
+			
+			if (!mediaQuery) {
+				return; // Skip invalid rules
+			}
+			
+			// Create CSS for this rule
+			let cssProperties = '';
+			if (rule.styles && typeof rule.styles === 'object') {
+				Object.keys(rule.styles).forEach(key => {
+					// Convert camelCase to kebab-case for CSS properties
+					const property = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+					cssProperties += `${property}: ${rule.styles[key]}; `;
+				});
+			}
+			
+			if (cssProperties) {
+				cssRules += `
+				${mediaQuery} {
+					#${elementId} {
+						${cssProperties}
+					}
+				}`;
+			}
+		});
+		
+		styleElement.textContent = cssRules;
+		document.head.appendChild(styleElement);
+		
+		// Store the style element ID for potential future updates
+		element.dataset.responsiveStyleId = styleId;
+		
+		return { 
+			success: true, 
+			elementId,
+			styleId,
+			rulesApplied: rules.length
+		};
+	},
+	
+	// Image generation function
+	generateImage: async ({ prompt, size, quality, style, elementId }) => {
+		try {
+			// Create a loading placeholder
+			const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
+			if (!targetElement) {
+				return { success: false, error: 'Target element not found' };
+			}
+			
+			// Create image container with loading indicator
+			const imageContainer = document.createElement('div');
+			const containerId = generateUniqueId('img-container');
+			imageContainer.id = containerId;
+			imageContainer.style.position = 'relative';
+			imageContainer.style.minHeight = '200px';
+			imageContainer.style.display = 'flex';
+			imageContainer.style.justifyContent = 'center';
+			imageContainer.style.alignItems = 'center';
+			imageContainer.textContent = 'Generating image...';
+			
+			targetElement.appendChild(imageContainer);
+			
+			// Make API request to generate image
+			const response = await fetch('/api/generate-image', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					prompt,
+					size: size || '1024x1024', // Default size
+					quality: quality || 'standard', // 'standard' or 'hd'
+					style: style || 'vivid', // 'vivid' or 'natural'
+				}),
+			});
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				imageContainer.textContent = 'Image generation failed';
+				return { 
+					success: false, 
+					error: errorData.error || 'Failed to generate image',
+					containerId 
+				};
+			}
+			
+			const data = await response.json();
+			
+			// Create and display the generated image
+			imageContainer.textContent = '';
+			const img = document.createElement('img');
+			img.src = data.url;
+			img.alt = prompt;
+			img.style.maxWidth = '100%';
+			img.style.height = 'auto';
+			img.id = generateUniqueId('generated-img');
+			
+			imageContainer.appendChild(img);
+			
+			return { 
+				success: true, 
+				imageUrl: data.url, 
+				containerId,
+				imageId: img.id 
+			};
+		} catch (error) {
+			console.error('Image generation error:', error);
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred during image generation' 
+			};
+		}
+	},
+	
+	// Simplified image placeholder (when generation is not available)
+	createImagePlaceholder: ({ text, width, height, elementId }) => {
+		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
+		if (!targetElement) {
+			return { success: false, error: 'Target element not found' };
+		}
+		
+		const placeholderContainer = document.createElement('div');
+		const containerId = generateUniqueId('img-placeholder');
+		placeholderContainer.id = containerId;
+		
+		placeholderContainer.style.width = width || '300px';
+		placeholderContainer.style.height = height || '200px';
+		placeholderContainer.style.backgroundColor = '#f0f0f0';
+		placeholderContainer.style.display = 'flex';
+		placeholderContainer.style.justifyContent = 'center';
+		placeholderContainer.style.alignItems = 'center';
+		placeholderContainer.style.border = '1px solid #ddd';
+		placeholderContainer.style.fontSize = '1rem';
+		
+		placeholderContainer.textContent = text || 'Image';
+		
+		targetElement.appendChild(placeholderContainer);
+		
+		return { 
+			success: true, 
+			containerId,
+			width: width || '300px',
+			height: height || '200px'
+		};
+	},
 };
 
 // Create a WebRTC Agent
@@ -788,25 +1164,6 @@ function configureData() {
 				},
 				{
 					type: 'function',
-					name: 'parseAndAddHTML',
-					description: 'Parses and adds HTML content to the page',
-					parameters: {
-						type: 'object',
-						properties: {
-							html: { 
-								type: 'string', 
-								description: 'HTML content to add to the page' 
-							},
-							elementId: { 
-								type: 'string', 
-								description: 'Optional ID of the element to append to (defaults to .content)' 
-							}
-						},
-						required: ['html']
-					}
-				},
-				{
-					type: 'function',
 					name: 'listPageElements',
 					description: 'Lists all elements with IDs on the page',
 				},
@@ -858,7 +1215,206 @@ function configureData() {
 						},
 						required: ['elementId', 'format']
 					}
-				}
+				},
+				// New responsive layout tools
+				{
+					type: 'function',
+					name: 'createLayoutContainer',
+					description: 'Creates a container with either grid or flexbox layout',
+					parameters: {
+						type: 'object',
+						properties: {
+							containerId: { type: 'string', description: 'Optional ID for the container' },
+							type: { type: 'string', description: 'Layout type: "grid" or "flex"' },
+							elementId: { type: 'string', description: 'Optional ID of the parent element to append to (defaults to .content)' }
+						},
+						required: ['type']
+					}
+				},
+				{
+					type: 'function',
+					name: 'createColumnLayout',
+					description: 'Creates a responsive column-based layout',
+					parameters: {
+						type: 'object',
+						properties: {
+							containerId: { type: 'string', description: 'ID of the container to convert to columns' },
+							columns: { 
+								type: 'integer', 
+								description: 'Number of columns in the default view'
+							},
+							gap: { type: 'string', description: 'Space between columns (e.g., "20px")' },
+							breakpoints: { 
+								type: 'array',
+								description: 'Array of responsive breakpoints and column configurations',
+								items: {
+									type: 'object',
+									properties: {
+										maxWidth: { type: 'string', description: 'Maximum screen width for this breakpoint (e.g., "768px")' },
+										columns: { type: 'integer', description: 'Number of columns at this breakpoint' }
+									}
+								}
+							}
+						},
+						required: ['containerId', 'columns']
+					}
+				},
+				{
+					type: 'function',
+					name: 'createGridLayout',
+					description: 'Sets up a complex grid layout system',
+					parameters: {
+						type: 'object',
+						properties: {
+							containerId: { type: 'string', description: 'ID of the container to make a grid' },
+							rows: { 
+								type: ['integer', 'array', 'string'], 
+								description: 'Number of rows, array of row heights, or template string'
+							},
+							columns: { 
+								type: ['integer', 'array', 'string'], 
+								description: 'Number of columns, array of column widths, or template string'
+							},
+							areas: { 
+								type: 'array',
+								description: 'Template strings for named grid areas',
+								items: { type: 'string' }
+							},
+							gap: { type: 'string', description: 'Space between grid cells (e.g., "10px" or "10px 20px")' }
+						},
+						required: ['containerId']
+					}
+				},
+				{
+					type: 'function',
+					name: 'addElementToLayout',
+					description: 'Places an element at a specific position in a layout container',
+					parameters: {
+						type: 'object',
+						properties: {
+							element: { 
+								type: 'object',
+								description: 'Element to add to the layout',
+								properties: {
+									type: { type: 'string', description: 'Element type: text, div, heading, button, image, or custom' },
+									content: { type: 'string', description: 'Text content of the element' },
+									id: { type: 'string', description: 'Optional ID for the element' },
+									className: { type: 'string', description: 'Optional CSS classes' },
+									styles: { type: 'object', description: 'Optional inline styles to apply' },
+									level: { type: 'integer', description: 'Heading level (for heading type)' },
+									src: { type: 'string', description: 'Image source URL (for image type)' },
+									alt: { type: 'string', description: 'Image alt text (for image type)' },
+									tagName: { type: 'string', description: 'Custom element tag name (for custom type)' }
+								},
+								required: ['type']
+							},
+							containerId: { type: 'string', description: 'ID of the layout container' },
+							position: { 
+								type: 'object',
+								description: 'Position in the layout (grid or flex)',
+								properties: {
+									// Grid position properties
+									row: { type: 'string', description: 'Grid row position (e.g., "1" or "1 / span 2")' },
+									column: { type: 'string', description: 'Grid column position (e.g., "1" or "1 / span 3")' },
+									area: { type: 'string', description: 'Named grid area to place element in' },
+									// Flex position properties
+									order: { type: 'integer', description: 'Order of the flex item' },
+									grow: { type: 'number', description: 'Flex grow factor' },
+									shrink: { type: 'number', description: 'Flex shrink factor' },
+									basis: { type: 'string', description: 'Flex basis value' }
+								}
+							}
+						},
+						required: ['element', 'containerId']
+					}
+				},
+				{
+					type: 'function',
+					name: 'setResponsiveRules',
+					description: 'Adds media queries for responsive behavior to an element',
+					parameters: {
+						type: 'object',
+						properties: {
+							elementId: { type: 'string', description: 'ID of the element to apply responsive rules to' },
+							rules: { 
+								type: 'array',
+								description: 'Array of responsive rules',
+								items: {
+									type: 'object',
+									properties: {
+										maxWidth: { type: 'string', description: 'Maximum screen width for this rule (e.g., "768px")' },
+										minWidth: { type: 'string', description: 'Minimum screen width for this rule (e.g., "992px")' },
+										media: { type: 'string', description: 'Custom media query' },
+										styles: { 
+											type: 'object',
+											description: 'Styles to apply at this breakpoint',
+											additionalProperties: true
+										}
+									}
+								}
+							}
+						},
+						required: ['elementId', 'rules']
+					}
+				},
+				// Image generation tools
+				{
+					type: 'function',
+					name: 'generateImage',
+					description: 'Generates an image using AI based on a text prompt',
+					parameters: {
+						type: 'object',
+						properties: {
+							prompt: { 
+								type: 'string', 
+								description: 'A text description of the image you want to generate' 
+							},
+							size: { 
+								type: 'string', 
+								description: 'Image size - "1024x1024" (default), "1024x1792", or "1792x1024"' 
+							},
+							quality: { 
+								type: 'string', 
+								description: 'Image quality - "standard" (default) or "hd"' 
+							},
+							style: { 
+								type: 'string', 
+								description: 'Image style - "vivid" (default) or "natural"' 
+							},
+							elementId: { 
+								type: 'string', 
+								description: 'ID of the element to append the image to (defaults to .content)' 
+							}
+						},
+						required: ['prompt']
+					}
+				},
+				{
+					type: 'function',
+					name: 'createImagePlaceholder',
+					description: 'Creates a placeholder for an image with custom text',
+					parameters: {
+						type: 'object',
+						properties: {
+							text: { 
+								type: 'string', 
+								description: 'Text to display in the placeholder' 
+							},
+							width: { 
+								type: 'string', 
+								description: 'Width of the placeholder (e.g., "300px")' 
+							},
+							height: { 
+								type: 'string', 
+								description: 'Height of the placeholder (e.g., "200px")' 
+							},
+							elementId: { 
+								type: 'string', 
+								description: 'ID of the element to append the placeholder to (defaults to .content)' 
+							}
+						}
+					}
+				},
 			],
 		},
 	};
@@ -1043,14 +1599,4 @@ fns.addText = ({ text, elementId }) => {
 	
 	// Call the original function with the processed text
 	return originalAddText({ text: processedText, elementId });
-};
-
-// Override parseAndAddHTML to use the preprocessor
-const originalParseAndAddHTML = fns.parseAndAddHTML;
-fns.parseAndAddHTML = ({ html, elementId }) => {
-	// Preprocess the HTML content
-	const processedHTML = preprocessTextContent(html);
-	
-	// Call the original function with the processed HTML
-	return originalParseAndAddHTML({ html: processedHTML, elementId });
 };
