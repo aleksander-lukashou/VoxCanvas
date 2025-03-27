@@ -538,6 +538,111 @@ const fns = {
 		}
 	},
 	
+	// Add image alignment function
+	alignImage: ({ imageId, alignment, margin }) => {
+		const image = document.getElementById(imageId);
+		if (!image || image.tagName.toLowerCase() !== 'img') {
+			return { success: false, error: 'Image not found or element is not an image' };
+		}
+		
+		try {
+			// Reset existing alignment styles
+			image.style.display = 'block';
+			image.style.marginLeft = '';
+			image.style.marginRight = '';
+			image.style.float = '';
+			
+			// Apply specified margin if provided
+			const marginValue = margin || '10px';
+			
+			// Apply the requested alignment
+			switch (alignment) {
+				case 'left':
+					image.style.float = 'left';
+					image.style.marginRight = marginValue;
+					image.style.marginBottom = marginValue;
+					break;
+				case 'right':
+					image.style.float = 'right';
+					image.style.marginLeft = marginValue;
+					image.style.marginBottom = marginValue;
+					break;
+				case 'center':
+					image.style.marginLeft = 'auto';
+					image.style.marginRight = 'auto';
+					break;
+				case 'inline-start':
+					image.style.display = 'inline-block';
+					image.style.verticalAlign = 'middle';
+					image.style.marginRight = marginValue;
+					break;
+				case 'inline-end':
+					image.style.display = 'inline-block';
+					image.style.verticalAlign = 'middle';
+					image.style.marginLeft = marginValue;
+					break;
+				case 'none':
+					// Remove all alignment styles
+					break;
+				default:
+					return { success: false, error: 'Unsupported alignment value. Use "left", "right", "center", "inline-start", "inline-end", or "none"' };
+			}
+			
+			return { 
+				success: true, 
+				imageId: imageId,
+				alignment: alignment
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while aligning the image'
+			};
+		}
+	},
+	
+	// Add image delete function
+	deleteImage: ({ imageId, fadeOut }) => {
+		const image = document.getElementById(imageId);
+		if (!image || image.tagName.toLowerCase() !== 'img') {
+			return { success: false, error: 'Image not found or element is not an image' };
+		}
+		
+		try {
+			// If fadeOut is true, animate the image opacity before removing
+			if (fadeOut) {
+				// Set transition for smooth fade out
+				image.style.transition = 'opacity 0.5s ease';
+				image.style.opacity = '0';
+				
+				// Wait for the transition to complete before removing the element
+				setTimeout(() => {
+					image.remove();
+				}, 500);
+				
+				return { 
+					success: true, 
+					imageId: imageId,
+					animated: true
+				};
+			} else {
+				// Remove the image immediately
+				image.remove();
+				
+				return { 
+					success: true, 
+					imageId: imageId,
+					animated: false
+				};
+			}
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while deleting the image'
+			};
+		}
+	},
+	
 	// Add a new function to handle inline text formatting (like bold, italic, etc.)
 	formatTextContent: ({ elementId, format, selection }) => {
 		const element = elementId ? document.getElementById(elementId) : null;
@@ -1017,6 +1122,50 @@ function configureData() {
 							maintainAspectRatio: { 
 								type: 'boolean', 
 								description: 'Whether to maintain the aspect ratio (default: true)' 
+							}
+						},
+						required: ['imageId']
+					}
+				},
+				// Add image alignment tool
+				{
+					type: 'function',
+					name: 'alignImage',
+					description: 'Aligns an existing image on the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageId: { 
+								type: 'string', 
+								description: 'ID of the image element to align' 
+							},
+							alignment: { 
+								type: 'string', 
+								description: 'Alignment type: left, right, center, inline-start, inline-end, or none' 
+							},
+							margin: { 
+								type: 'string', 
+								description: 'Margin around the image (e.g., "10px")' 
+							}
+						},
+						required: ['imageId', 'alignment']
+					}
+				},
+				// Add image delete tool
+				{
+					type: 'function',
+					name: 'deleteImage',
+					description: 'Deletes an existing image from the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageId: { 
+								type: 'string', 
+								description: 'ID of the image element to delete' 
+							},
+							fadeOut: { 
+								type: 'boolean', 
+								description: 'Whether to animate the deletion (default: true)' 
 							}
 						},
 						required: ['imageId']
