@@ -435,6 +435,109 @@ const fns = {
 			}
 		};
 	},
+	// Add image generation function
+	generateImage: async ({ prompt, model, elementId, size, quality }) => {
+		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
+		if (!targetElement) {
+			return { success: false, error: 'Target element not found' };
+		}
+		
+		try {
+			// Make a request to the backend which will interface with OpenAI
+			const response = await fetch('/generate-image', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					prompt,
+					model: model || 'dall-e-3',
+					size: size || '512x512',
+					quality: quality || 'standard',
+				}),
+			});
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				return { 
+					success: false, 
+					error: errorData.error || 'Failed to generate image'
+				};
+			}
+			
+			const data = await response.json();
+			
+			// Create an image element with the generated image URL
+			const img = document.createElement('img');
+			img.src = data.imageUrl;
+			img.alt = prompt;
+			
+			// Ensure the image has an ID
+			const imageId = generateUniqueId('image');
+			img.id = imageId;
+			
+			// Add basic styling
+			img.style.maxWidth = '100%';
+			img.style.height = 'auto';
+			img.style.display = 'block';
+			img.style.margin = '10px 0';
+			
+			// Add the image to the target element
+			targetElement.appendChild(img);
+			
+			return { 
+				success: true, 
+				imageId: imageId,
+				prompt: prompt,
+				imageUrl: data.imageUrl
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred during image generation'
+			};
+		}
+	},
+	
+	// Add image resize function
+	resizeImage: ({ imageId, width, height, maintainAspectRatio }) => {
+		const image = document.getElementById(imageId);
+		if (!image || image.tagName.toLowerCase() !== 'img') {
+			return { success: false, error: 'Image not found or element is not an image' };
+		}
+		
+		try {
+			// If maintainAspectRatio is true or not specified, only set one dimension
+			if (maintainAspectRatio !== false) {
+				if (width) {
+					image.style.width = typeof width === 'number' ? `${width}px` : width;
+					image.style.height = 'auto';
+				} else if (height) {
+					image.style.height = typeof height === 'number' ? `${height}px` : height;
+					image.style.width = 'auto';
+				} else {
+					return { success: false, error: 'Either width or height must be specified' };
+				}
+			} else {
+				// Set both dimensions independently
+				if (width) image.style.width = typeof width === 'number' ? `${width}px` : width;
+				if (height) image.style.height = typeof height === 'number' ? `${height}px` : height;
+			}
+			
+			return { 
+				success: true, 
+				imageId: imageId,
+				newWidth: image.style.width,
+				newHeight: image.style.height
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while resizing the image'
+			};
+		}
+	},
+	
 	// Add a new function to handle inline text formatting (like bold, italic, etc.)
 	formatTextContent: ({ elementId, format, selection }) => {
 		const element = elementId ? document.getElementById(elementId) : null;
@@ -857,6 +960,66 @@ function configureData() {
 							}
 						},
 						required: ['elementId', 'format']
+					}
+				},
+				// Add image generation tool
+				{
+					type: 'function',
+					name: 'generateImage',
+					description: 'Generates an image using DALL-E AI and adds it to the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							prompt: { 
+								type: 'string', 
+								description: 'Detailed description of the image to generate' 
+							},
+							model: { 
+								type: 'string', 
+								description: 'AI model to use for image generation (default: dall-e-3)' 
+							},
+							elementId: { 
+								type: 'string', 
+								description: 'Optional ID of the element to append the image to (defaults to .content)' 
+							},
+							size: { 
+								type: 'string', 
+								description: 'Image size (default: 1024x1024). Options: 1024x1024, 1024x1792, 1792x1024' 
+							},
+							quality: { 
+								type: 'string', 
+								description: 'Image quality (default: standard). Options: standard, hd' 
+							}
+						},
+						required: ['prompt']
+					}
+				},
+				// Add image resize tool
+				{
+					type: 'function',
+					name: 'resizeImage',
+					description: 'Resizes an existing image on the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageId: { 
+								type: 'string', 
+								description: 'ID of the image element to resize' 
+							},
+							width: { 
+								type: 'string', 
+								description: 'New width for the image (e.g., "500px", "50%")' 
+							},
+							height: { 
+								type: 'string', 
+								description: 'New height for the image (e.g., "300px", "auto")' 
+							},
+							maintainAspectRatio: { 
+								type: 'boolean', 
+								description: 'Whether to maintain the aspect ratio (default: true)' 
+							}
+						},
+						required: ['imageId']
 					}
 				}
 			],
