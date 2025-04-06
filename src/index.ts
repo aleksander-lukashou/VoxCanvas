@@ -44,54 +44,51 @@ app.get('/session', async (c) => {
 	  return c.json({result});
 });
 
-// Add route for image generation
-app.post('/generate-image', async (c) => {
-	try {
-		const body = await c.req.json();
-		const { prompt, model, size, quality } = body;
-		
-		if (!prompt) {
-			return c.json({ error: 'Prompt is required' }, 400);
-		}
-		
-		// Call OpenAI API to generate an image
-		const response = await fetch('https://api.openai.com/v1/images/generations', {
-			method: 'POST',
-			headers: {
-				'Authorization': `Bearer ${c.env.OPENAI_API_KEY}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				model: model || 'dall-e-3',
-				prompt: prompt,
-				n: 1,
-				size: size || '1024x1024',
-				quality: quality || 'standard',
-				response_format: 'url',
-			}),
-		});
-		
-		if (!response.ok) {
-			const errorData = await response.json() as { error?: { message: string } };
-			console.error('OpenAI API error:', errorData);
-			return c.json({ 
-				error: errorData.error?.message || 'Failed to generate image' 
-			}, 400);
-		}
-		
-		const data = await response.json() as { data: Array<{ url: string }> };
-		
-		// Return the image URL to the client
-		return c.json({ 
-			success: true,
-			imageUrl: data.data[0].url,
-		});
-	} catch (error) {
-		console.error('Error generating image:', error);
-		return c.json({ 
-			error: error instanceof Error ? error.message : 'An error occurred during image generation' 
-		}, 500);
-	}
+// Image generation endpoint
+app.post('/api/generate-image', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { prompt, size, quality, style } = body;
+    
+    if (!prompt) {
+      return c.json({ error: 'Prompt is required' }, 400);
+    }
+    
+    // Call OpenAI's DALL-E API to generate an image
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${c.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt,
+        n: 1,
+        size: size || '1024x1024',
+        quality: quality || 'standard',
+        style: style || 'vivid',
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json() as { error?: { message: string } };
+      console.error('OpenAI API error:', errorData);
+      return c.json({ 
+        error: errorData.error?.message || 'Failed to generate image',
+        details: errorData
+      }, response.status as 400 | 401 | 403 | 429 | 500);
+    }
+    
+    const result = await response.json() as { data: [{ url: string }] };
+    return c.json({ url: result.data[0].url });
+    
+  } catch (error: any) {
+    console.error('Image generation error:', error);
+    return c.json({ 
+      error: error.message || 'An unexpected error occurred',
+    }, 500);
+  }
 });
 
 export default app;
