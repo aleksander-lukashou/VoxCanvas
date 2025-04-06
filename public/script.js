@@ -643,6 +643,296 @@ const fns = {
 		}
 	},
 	
+	// Add grid creation function
+	createGrid: ({ elementId, columns, rows, gap, responsiveBreakpoints, gridContainerId }) => {
+		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
+		if (!targetElement) {
+			return { success: false, error: 'Target element not found' };
+		}
+		
+		try {
+			// Create a container for the grid
+			const gridContainer = document.createElement('div');
+			const gridId = gridContainerId || generateUniqueId('grid');
+			gridContainer.id = gridId;
+			
+			// Set up grid layout styles
+			gridContainer.style.display = 'grid';
+			
+			// Set columns
+			if (columns) {
+				if (typeof columns === 'number') {
+					// If columns is a number, create equal-width columns
+					gridContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+				} else if (Array.isArray(columns)) {
+					// If columns is an array, use the specified sizes
+					gridContainer.style.gridTemplateColumns = columns.join(' ');
+				} else {
+					// If columns is a string, use it directly
+					gridContainer.style.gridTemplateColumns = columns;
+				}
+			} else {
+				// Default to 2 columns
+				gridContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
+			}
+			
+			// Set rows if specified
+			if (rows) {
+				if (typeof rows === 'number') {
+					gridContainer.style.gridTemplateRows = `repeat(${rows}, auto)`;
+				} else if (Array.isArray(rows)) {
+					gridContainer.style.gridTemplateRows = rows.join(' ');
+				} else {
+					gridContainer.style.gridTemplateRows = rows;
+				}
+			}
+			
+			// Set gap between grid items
+			if (gap) {
+				if (typeof gap === 'string') {
+					gridContainer.style.gap = gap;
+				} else if (typeof gap === 'object' && gap.column && gap.row) {
+					gridContainer.style.columnGap = gap.column;
+					gridContainer.style.rowGap = gap.row;
+				} else {
+					gridContainer.style.gap = '20px';
+				}
+			} else {
+				gridContainer.style.gap = '20px';
+			}
+			
+			// Add responsive styles using media queries if specified
+			if (responsiveBreakpoints && Array.isArray(responsiveBreakpoints)) {
+				const styleTag = document.createElement('style');
+				let mediaQueries = '';
+				
+				responsiveBreakpoints.forEach(bp => {
+					if (bp.maxWidth && bp.columns) {
+						const cols = typeof bp.columns === 'number' 
+							? `repeat(${bp.columns}, 1fr)` 
+							: bp.columns;
+						
+						mediaQueries += `
+							@media (max-width: ${bp.maxWidth}) {
+								#${gridId} {
+									grid-template-columns: ${cols};
+									${bp.gap ? `gap: ${bp.gap};` : ''}
+								}
+							}
+						`;
+					}
+				});
+				
+				styleTag.textContent = mediaQueries;
+				document.head.appendChild(styleTag);
+			}
+			
+			// Set additional styles
+			gridContainer.style.width = '100%';
+			
+			// Create empty grid cells based on rows and columns if specified
+			const cellCount = (typeof columns === 'number' ? columns : 2) * (typeof rows === 'number' ? rows : 0);
+			if (cellCount > 0) {
+				for (let i = 0; i < cellCount; i++) {
+					const cell = document.createElement('div');
+					cell.id = `${gridId}-cell-${i+1}`;
+					cell.className = 'grid-cell';
+					cell.style.minHeight = '50px';
+					cell.style.padding = '10px';
+					cell.style.border = '1px dashed #ccc';
+					gridContainer.appendChild(cell);
+				}
+			}
+			
+			// Add the grid to the target element
+			targetElement.appendChild(gridContainer);
+			
+			return { 
+				success: true, 
+				gridId: gridId,
+				columnsCount: typeof columns === 'number' ? columns : (Array.isArray(columns) ? columns.length : null),
+				rowsCount: typeof rows === 'number' ? rows : (Array.isArray(rows) ? rows.length : null)
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while creating the grid'
+			};
+		}
+	},
+	
+	// Add grid modification function
+	modifyGrid: ({ gridId, columns, rows, gap, addElements, cellStyles }) => {
+		const gridContainer = document.getElementById(gridId);
+		if (!gridContainer) {
+			return { success: false, error: 'Grid container not found' };
+		}
+		
+		try {
+			// Update grid columns if specified
+			if (columns) {
+				if (typeof columns === 'number') {
+					gridContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+				} else if (Array.isArray(columns)) {
+					gridContainer.style.gridTemplateColumns = columns.join(' ');
+				} else {
+					gridContainer.style.gridTemplateColumns = columns;
+				}
+			}
+			
+			// Update grid rows if specified
+			if (rows) {
+				if (typeof rows === 'number') {
+					gridContainer.style.gridTemplateRows = `repeat(${rows}, auto)`;
+				} else if (Array.isArray(rows)) {
+					gridContainer.style.gridTemplateRows = rows.join(' ');
+				} else {
+					gridContainer.style.gridTemplateRows = rows;
+				}
+			}
+			
+			// Update gap between grid items if specified
+			if (gap) {
+				if (typeof gap === 'string') {
+					gridContainer.style.gap = gap;
+				} else if (typeof gap === 'object' && gap.column && gap.row) {
+					gridContainer.style.columnGap = gap.column;
+					gridContainer.style.rowGap = gap.row;
+				}
+			}
+			
+			// Add elements to specific cells if specified
+			if (addElements && Array.isArray(addElements)) {
+				addElements.forEach(item => {
+					const cellIndex = item.cellIndex;
+					const content = item.content;
+					const cellId = item.cellId || `${gridId}-cell-${cellIndex}`;
+					
+					// Find the cell or create it if it doesn't exist
+					let cell = document.getElementById(cellId);
+					if (!cell) {
+						cell = document.createElement('div');
+						cell.id = cellId;
+						cell.className = 'grid-cell';
+						
+						// If cellIndex is provided, try to position it
+						if (cellIndex) {
+							// Calculate row and column from index
+							const currentColumnCount = getComputedStyle(gridContainer).gridTemplateColumns.split(' ').length;
+							if (currentColumnCount > 0) {
+								const row = Math.ceil(cellIndex / currentColumnCount);
+								const column = ((cellIndex - 1) % currentColumnCount) + 1;
+								cell.style.gridRow = row;
+								cell.style.gridColumn = column;
+							}
+						}
+						
+						gridContainer.appendChild(cell);
+					}
+					
+					// Add content to the cell
+					if (content) {
+						if (typeof content === 'string') {
+							cell.innerHTML = content;
+						} else if (typeof content === 'object') {
+							// For more complex content, create and add the specified elements
+							if (content.type === 'text') {
+								const p = document.createElement('p');
+								p.textContent = content.text;
+								cell.appendChild(p);
+							} else if (content.type === 'image') {
+								const img = document.createElement('img');
+								img.src = content.src;
+								img.alt = content.alt || '';
+								img.style.maxWidth = '100%';
+								cell.appendChild(img);
+							} else if (content.type === 'button') {
+								const button = document.createElement('button');
+								button.textContent = content.text;
+								cell.appendChild(button);
+							}
+						}
+					}
+				});
+			}
+			
+			// Apply styles to specific cells if specified
+			if (cellStyles && Array.isArray(cellStyles)) {
+				cellStyles.forEach(style => {
+					const cellId = style.cellId;
+					const cellIndex = style.cellIndex;
+					
+					// Find the cell by ID or index
+					let cell;
+					if (cellId) {
+						cell = document.getElementById(cellId);
+					} else if (cellIndex) {
+						cell = document.querySelector(`#${gridId} > :nth-child(${cellIndex})`);
+					}
+					
+					// Apply styles if the cell exists
+					if (cell && style.styles) {
+						Object.entries(style.styles).forEach(([key, value]) => {
+							cell.style[key] = value;
+						});
+					}
+				});
+			}
+			
+			return { 
+				success: true, 
+				gridId: gridId
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while modifying the grid'
+			};
+		}
+	},
+	
+	// Add grid deletion function
+	deleteGrid: ({ gridId, fadeOut }) => {
+		const gridContainer = document.getElementById(gridId);
+		if (!gridContainer) {
+			return { success: false, error: 'Grid container not found' };
+		}
+		
+		try {
+			// If fadeOut is true, animate the grid opacity before removing
+			if (fadeOut) {
+				// Set transition for smooth fade out
+				gridContainer.style.transition = 'opacity 0.5s ease';
+				gridContainer.style.opacity = '0';
+				
+				// Wait for the transition to complete before removing the element
+				setTimeout(() => {
+					gridContainer.remove();
+				}, 500);
+				
+				return { 
+					success: true, 
+					gridId: gridId,
+					animated: true
+				};
+			} else {
+				// Remove the grid immediately
+				gridContainer.remove();
+				
+				return { 
+					success: true, 
+					gridId: gridId,
+					animated: false
+				};
+			}
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while deleting the grid'
+			};
+		}
+	},
+	
 	// Add a new function to handle inline text formatting (like bold, italic, etc.)
 	formatTextContent: ({ elementId, format, selection }) => {
 		const element = elementId ? document.getElementById(elementId) : null;
@@ -1169,6 +1459,98 @@ function configureData() {
 							}
 						},
 						required: ['imageId']
+					}
+				},
+				// Add grid creation tool
+				{
+					type: 'function',
+					name: 'createGrid',
+					description: 'Creates a new grid on the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							elementId: { 
+								type: 'string', 
+								description: 'ID of the element to append the grid to (defaults to .content)' 
+							},
+							columns: { 
+								type: 'string', 
+								description: 'Number of columns in the grid' 
+							},
+							rows: { 
+								type: 'string', 
+								description: 'Number of rows in the grid' 
+							},
+							gap: { 
+								type: 'string', 
+								description: 'Gap between grid items' 
+							},
+							responsiveBreakpoints: { 
+								type: 'array', 
+								description: 'Array of responsive breakpoints' 
+							},
+							gridContainerId: { 
+								type: 'string', 
+								description: 'Optional ID for the grid container' 
+							}
+						},
+						required: ['elementId']
+					}
+				},
+				// Add grid modification tool
+				{
+					type: 'function',
+					name: 'modifyGrid',
+					description: 'Modifies an existing grid on the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							gridId: { 
+								type: 'string', 
+								description: 'ID of the grid to modify' 
+							},
+							columns: { 
+								type: 'string', 
+								description: 'Number of columns in the grid' 
+							},
+							rows: { 
+								type: 'string', 
+								description: 'Number of rows in the grid' 
+							},
+							gap: { 
+								type: 'string', 
+								description: 'Gap between grid items' 
+							},
+							addElements: { 
+								type: 'array', 
+								description: 'Array of elements to add to the grid' 
+							},
+							cellStyles: { 
+								type: 'array', 
+								description: 'Array of styles to apply to specific cells' 
+							}
+						},
+						required: ['gridId']
+					}
+				},
+				// Add grid deletion tool
+				{
+					type: 'function',
+					name: 'deleteGrid',
+					description: 'Deletes an existing grid from the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							gridId: { 
+								type: 'string', 
+								description: 'ID of the grid to delete' 
+							},
+							fadeOut: { 
+								type: 'boolean', 
+								description: 'Whether to animate the deletion (default: true)' 
+							}
+						},
+						required: ['gridId']
 					}
 				}
 			],
