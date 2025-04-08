@@ -325,6 +325,54 @@ const fns = {
 		return { success: true, deletedElementId: elementId };
 	},
 	
+	parseAndAddHTML: ({ html, elementId }) => {
+		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
+		if (!targetElement) {
+			return { success: false, error: 'Target element not found' };
+		}
+		
+		// Create a temporary container
+		const tempContainer = document.createElement('div');
+		tempContainer.innerHTML = html;
+		
+		// Extract style tags and apply styles properly
+		const styleElements = tempContainer.querySelectorAll('style');
+		styleElements.forEach(styleEl => {
+			const styleContent = styleEl.textContent || '';
+			
+			// Parse the style tag to extract ID and style properties
+			const styleRegex = /#([a-zA-Z0-9-_]+)\s*{([^}]*)}/g;
+			let match;
+			
+			while ((match = styleRegex.exec(styleContent)) !== null) {
+				const targetId = match[1];
+				const styleText = match[2];
+				const element = document.getElementById(targetId);
+				
+				if (element) {
+					// Apply styles directly to the element instead of using a style tag
+					const styleProps = {};
+					styleText.split(';').forEach(prop => {
+						const [key, value] = prop.split(':').map(s => s.trim());
+						if (key && value) {
+							// Apply each style property directly to the element's style
+							element.style[key] = value;
+						}
+					});
+				}
+			}
+			
+			// Remove the style element as we've processed it
+			styleEl.remove();
+		});
+		
+		// Move all remaining child nodes from the temporary container to the target element
+		while (tempContainer.firstChild) {
+			targetElement.appendChild(tempContainer.firstChild);
+		}
+		
+		return { success: true, elementId };
+	},
 	listPageElements: () => {
 		// Get all elements with IDs
 		const elementsWithIds = document.querySelectorAll('[id]');
@@ -404,7 +452,7 @@ const fns = {
 				body: JSON.stringify({
 					prompt,
 					model: model || 'dall-e-3',
-					size: size || '512x512',
+					size: size || '1024x1024',
 					quality: quality || 'standard',
 				}),
 			});
@@ -595,271 +643,283 @@ const fns = {
 		}
 	},
 	
-	// Add grid creation function
-	createGrid: ({ elementId, columns, rows, gap, responsiveBreakpoints, gridContainerId }) => {
-		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
-		if (!targetElement) {
-			return { success: false, error: 'Target element not found' };
+	// Add grid layout function
+	createGridLayout: ({ 
+		containerId, 
+		rows, 
+		columns, 
+		gap = '10px', 
+		gridTemplateAreas = null,
+		gridTemplateColumns = null,
+		gridTemplateRows = null,
+		justifyItems = 'stretch',
+		alignItems = 'stretch',
+		justifyContent = 'start',
+		alignContent = 'start',
+		height = 'auto',
+		width = '100%'
+	}) => {
+		const container = containerId ? document.getElementById(containerId) : document.querySelector('.content');
+		if (!container) {
+			return { success: false, error: 'Container element not found' };
 		}
 		
 		try {
-			// Create a container for the grid
+			// Create a unique ID for the grid container
+			const gridId = generateUniqueId('grid');
+			
+			// Create the grid container
 			const gridContainer = document.createElement('div');
-			const gridId = gridContainerId || generateUniqueId('grid');
 			gridContainer.id = gridId;
-			
-			// Set up grid layout styles
 			gridContainer.style.display = 'grid';
+			gridContainer.style.gap = gap;
+			gridContainer.style.justifyItems = justifyItems;
+			gridContainer.style.alignItems = alignItems;
+			gridContainer.style.justifyContent = justifyContent;
+			gridContainer.style.alignContent = alignContent;
+			gridContainer.style.height = height;
+			gridContainer.style.width = width;
 			
-			// Set columns
-			if (columns) {
-				if (typeof columns === 'number') {
-					// If columns is a number, create equal-width columns
-					gridContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
-				} else if (Array.isArray(columns)) {
-					// If columns is an array, use the specified sizes
-					gridContainer.style.gridTemplateColumns = columns.join(' ');
-				} else {
-					// If columns is a string, use it directly
-					gridContainer.style.gridTemplateColumns = columns;
-				}
+			// Set grid template
+			if (gridTemplateAreas) {
+				gridContainer.style.gridTemplateAreas = gridTemplateAreas;
 			} else {
-				// Default to 2 columns
-				gridContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
+				gridContainer.style.gridTemplateColumns = gridTemplateColumns || `repeat(${columns}, 1fr)`;
+				gridContainer.style.gridTemplateRows = gridTemplateRows || `repeat(${rows}, 1fr)`;
 			}
 			
-			// Set rows if specified
-			if (rows) {
-				if (typeof rows === 'number') {
-					gridContainer.style.gridTemplateRows = `repeat(${rows}, auto)`;
-				} else if (Array.isArray(rows)) {
-					gridContainer.style.gridTemplateRows = rows.join(' ');
-				} else {
-					gridContainer.style.gridTemplateRows = rows;
-				}
-			}
-			
-			// Set gap between grid items
-			if (gap) {
-				if (typeof gap === 'string') {
-					gridContainer.style.gap = gap;
-				} else if (typeof gap === 'object' && gap.column && gap.row) {
-					gridContainer.style.columnGap = gap.column;
-					gridContainer.style.rowGap = gap.row;
-				} else {
-					gridContainer.style.gap = '20px';
-				}
-			} else {
-				gridContainer.style.gap = '20px';
-			}
-			
-			// Add responsive styles using media queries if specified
-			if (responsiveBreakpoints && Array.isArray(responsiveBreakpoints)) {
-				const styleTag = document.createElement('style');
-				let mediaQueries = '';
-				
-				responsiveBreakpoints.forEach(bp => {
-					if (bp.maxWidth && bp.columns) {
-						const cols = typeof bp.columns === 'number' 
-							? `repeat(${bp.columns}, 1fr)` 
-							: bp.columns;
-						
-						mediaQueries += `
-							@media (max-width: ${bp.maxWidth}) {
-								#${gridId} {
-									grid-template-columns: ${cols};
-									${bp.gap ? `gap: ${bp.gap};` : ''}
-								}
-							}
-						`;
-					}
-				});
-				
-				styleTag.textContent = mediaQueries;
-				document.head.appendChild(styleTag);
-			}
-			
-			// Set additional styles
-			gridContainer.style.width = '100%';
-			
-			// Create empty grid cells based on rows and columns if specified
-			const cellCount = (typeof columns === 'number' ? columns : 2) * (typeof rows === 'number' ? rows : 0);
-			if (cellCount > 0) {
-				for (let i = 0; i < cellCount; i++) {
-					const cell = document.createElement('div');
-					cell.id = `${gridId}-cell-${i+1}`;
-					cell.className = 'grid-cell';
-					cell.style.minHeight = '50px';
-					cell.style.padding = '10px';
-					cell.style.border = '1px dashed #ccc';
-					gridContainer.appendChild(cell);
-				}
-			}
-			
-			// Add the grid to the target element
-			targetElement.appendChild(gridContainer);
+			// Add the grid container to the page
+			container.appendChild(gridContainer);
 			
 			return { 
 				success: true, 
 				gridId: gridId,
-				columnsCount: typeof columns === 'number' ? columns : (Array.isArray(columns) ? columns.length : null),
-				rowsCount: typeof rows === 'number' ? rows : (Array.isArray(rows) ? rows.length : null)
+				rows: rows,
+				columns: columns,
+				properties: {
+					gap,
+					gridTemplateAreas,
+					gridTemplateColumns: gridContainer.style.gridTemplateColumns,
+					gridTemplateRows: gridContainer.style.gridTemplateRows,
+					justifyItems,
+					alignItems,
+					justifyContent,
+					alignContent,
+					height,
+					width
+				}
 			};
 		} catch (error) {
 			return { 
 				success: false, 
-				error: error.message || 'An error occurred while creating the grid'
+				error: error.message || 'An error occurred while creating the grid layout'
 			};
 		}
 	},
 	
-	// Add grid modification function
-	modifyGrid: ({ gridId, columns, rows, gap, addElements, cellStyles }) => {
-		const gridContainer = document.getElementById(gridId);
-		if (!gridContainer) {
+	// Add grid item function
+	addGridItem: ({ 
+		gridId, 
+		content, 
+		gridArea = null,
+		gridColumn = null,
+		gridRow = null,
+		justifySelf = 'stretch',
+		alignSelf = 'stretch',
+		className = null
+	}) => {
+		const grid = document.getElementById(gridId);
+		if (!grid) {
 			return { success: false, error: 'Grid container not found' };
 		}
 		
 		try {
-			// Update grid columns if specified
-			if (columns) {
-				if (typeof columns === 'number') {
-					gridContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
-				} else if (Array.isArray(columns)) {
-					gridContainer.style.gridTemplateColumns = columns.join(' ');
-				} else {
-					gridContainer.style.gridTemplateColumns = columns;
+			// Create a unique ID for the grid item
+			const itemId = generateUniqueId('grid-item');
+			
+			// Create the grid item
+			const gridItem = document.createElement('div');
+			gridItem.id = itemId;
+			gridItem.style.justifySelf = justifySelf;
+			gridItem.style.alignSelf = alignSelf;
+			
+			// Set grid position
+			if (gridArea) {
+				gridItem.style.gridArea = gridArea;
+			} else if (gridColumn || gridRow) {
+				if (gridColumn) gridItem.style.gridColumn = gridColumn;
+				if (gridRow) gridItem.style.gridRow = gridRow;
+			}
+			
+			// Add content
+			if (typeof content === 'string') {
+				gridItem.innerHTML = content;
+			} else if (content instanceof HTMLElement) {
+				gridItem.appendChild(content);
+			}
+			
+			// Add class if specified
+			if (className) {
+				gridItem.className = className;
+			}
+			
+			// Add the grid item to the grid
+			grid.appendChild(gridItem);
+			
+			return { 
+				success: true, 
+				itemId: itemId,
+				gridId: gridId,
+				properties: {
+					gridArea,
+					gridColumn: gridItem.style.gridColumn,
+					gridRow: gridItem.style.gridRow,
+					justifySelf,
+					alignSelf
 				}
-			}
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while adding the grid item'
+			};
+		}
+	},
+	
+	// Add grid update function
+	updateGridLayout: ({ 
+		gridId, 
+		rows = null, 
+		columns = null, 
+		gap = null,
+		gridTemplateAreas = null,
+		gridTemplateColumns = null,
+		gridTemplateRows = null,
+		justifyItems = null,
+		alignItems = null,
+		justifyContent = null,
+		alignContent = null,
+		height = null,
+		width = null
+	}) => {
+		const grid = document.getElementById(gridId);
+		if (!grid) {
+			return { success: false, error: 'Grid container not found' };
+		}
+		
+		try {
+			// Update grid properties
+			if (gap) grid.style.gap = gap;
+			if (justifyItems) grid.style.justifyItems = justifyItems;
+			if (alignItems) grid.style.alignItems = alignItems;
+			if (justifyContent) grid.style.justifyContent = justifyContent;
+			if (alignContent) grid.style.alignContent = alignContent;
+			if (height) grid.style.height = height;
+			if (width) grid.style.width = width;
 			
-			// Update grid rows if specified
-			if (rows) {
-				if (typeof rows === 'number') {
-					gridContainer.style.gridTemplateRows = `repeat(${rows}, auto)`;
-				} else if (Array.isArray(rows)) {
-					gridContainer.style.gridTemplateRows = rows.join(' ');
-				} else {
-					gridContainer.style.gridTemplateRows = rows;
-				}
-			}
-			
-			// Update gap between grid items if specified
-			if (gap) {
-				if (typeof gap === 'string') {
-					gridContainer.style.gap = gap;
-				} else if (typeof gap === 'object' && gap.column && gap.row) {
-					gridContainer.style.columnGap = gap.column;
-					gridContainer.style.rowGap = gap.row;
-				}
-			}
-			
-			// Add elements to specific cells if specified
-			if (addElements && Array.isArray(addElements)) {
-				addElements.forEach(item => {
-					const cellIndex = item.cellIndex;
-					const content = item.content;
-					const cellId = item.cellId || `${gridId}-cell-${cellIndex}`;
-					
-					// Find the cell or create it if it doesn't exist
-					let cell = document.getElementById(cellId);
-					if (!cell) {
-						cell = document.createElement('div');
-						cell.id = cellId;
-						cell.className = 'grid-cell';
-						
-						// If cellIndex is provided, try to position it
-						if (cellIndex) {
-							// Calculate row and column from index
-							const currentColumnCount = getComputedStyle(gridContainer).gridTemplateColumns.split(' ').length;
-							if (currentColumnCount > 0) {
-								const row = Math.ceil(cellIndex / currentColumnCount);
-								const column = ((cellIndex - 1) % currentColumnCount) + 1;
-								cell.style.gridRow = row;
-								cell.style.gridColumn = column;
-							}
-						}
-						
-						gridContainer.appendChild(cell);
-					}
-					
-					// Add content to the cell
-					if (content) {
-						if (typeof content === 'string') {
-							cell.innerHTML = content;
-						} else if (typeof content === 'object') {
-							// For more complex content, create and add the specified elements
-							if (content.type === 'text') {
-								const p = document.createElement('p');
-								p.textContent = content.text;
-								cell.appendChild(p);
-							} else if (content.type === 'image') {
-								const img = document.createElement('img');
-								img.src = content.src;
-								img.alt = content.alt || '';
-								img.style.maxWidth = '100%';
-								cell.appendChild(img);
-							} else if (content.type === 'button') {
-								const button = document.createElement('button');
-								button.textContent = content.text;
-								cell.appendChild(button);
-							}
-						}
-					}
-				});
-			}
-			
-			// Apply styles to specific cells if specified
-			if (cellStyles && Array.isArray(cellStyles)) {
-				cellStyles.forEach(style => {
-					const cellId = style.cellId;
-					const cellIndex = style.cellIndex;
-					
-					// Find the cell by ID or index
-					let cell;
-					if (cellId) {
-						cell = document.getElementById(cellId);
-					} else if (cellIndex) {
-						cell = document.querySelector(`#${gridId} > :nth-child(${cellIndex})`);
-					}
-					
-					// Apply styles if the cell exists
-					if (cell && style.styles) {
-						Object.entries(style.styles).forEach(([key, value]) => {
-							cell.style[key] = value;
-						});
-					}
-				});
+			// Update grid template
+			if (gridTemplateAreas) {
+				grid.style.gridTemplateAreas = gridTemplateAreas;
+			} else if (gridTemplateColumns || gridTemplateRows) {
+				if (gridTemplateColumns) grid.style.gridTemplateColumns = gridTemplateColumns;
+				if (gridTemplateRows) grid.style.gridTemplateRows = gridTemplateRows;
+			} else if (rows || columns) {
+				if (columns) grid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+				if (rows) grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 			}
 			
 			return { 
 				success: true, 
-				gridId: gridId
+				gridId: gridId,
+				updatedProperties: {
+					gap: grid.style.gap,
+					gridTemplateAreas: grid.style.gridTemplateAreas,
+					gridTemplateColumns: grid.style.gridTemplateColumns,
+					gridTemplateRows: grid.style.gridTemplateRows,
+					justifyItems: grid.style.justifyItems,
+					alignItems: grid.style.alignItems,
+					justifyContent: grid.style.justifyContent,
+					alignContent: grid.style.alignContent,
+					height: grid.style.height,
+					width: grid.style.width
+				}
 			};
 		} catch (error) {
 			return { 
 				success: false, 
-				error: error.message || 'An error occurred while modifying the grid'
+				error: error.message || 'An error occurred while updating the grid layout'
 			};
 		}
 	},
 	
-	// Add grid deletion function
-	deleteGrid: ({ gridId, fadeOut }) => {
-		const gridContainer = document.getElementById(gridId);
-		if (!gridContainer) {
+	// Add grid item update function
+	updateGridItem: ({ 
+		itemId, 
+		gridArea = null,
+		gridColumn = null,
+		gridRow = null,
+		justifySelf = null,
+		alignSelf = null,
+		content = null
+	}) => {
+		const item = document.getElementById(itemId);
+		if (!item) {
+			return { success: false, error: 'Grid item not found' };
+		}
+		
+		try {
+			// Update grid item properties
+			if (gridArea) item.style.gridArea = gridArea;
+			if (gridColumn) item.style.gridColumn = gridColumn;
+			if (gridRow) item.style.gridRow = gridRow;
+			if (justifySelf) item.style.justifySelf = justifySelf;
+			if (alignSelf) item.style.alignSelf = alignSelf;
+			
+			// Update content if provided
+			if (content) {
+				if (typeof content === 'string') {
+					item.innerHTML = content;
+				} else if (content instanceof HTMLElement) {
+					item.innerHTML = '';
+					item.appendChild(content);
+				}
+			}
+			
+			return { 
+				success: true, 
+				itemId: itemId,
+				updatedProperties: {
+					gridArea: item.style.gridArea,
+					gridColumn: item.style.gridColumn,
+					gridRow: item.style.gridRow,
+					justifySelf: item.style.justifySelf,
+					alignSelf: item.style.alignSelf
+				}
+			};
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while updating the grid item'
+			};
+		}
+	},
+	
+	// Add grid remove function
+	removeGridLayout: ({ gridId, fadeOut = true }) => {
+		const grid = document.getElementById(gridId);
+		if (!grid) {
 			return { success: false, error: 'Grid container not found' };
 		}
 		
 		try {
-			// If fadeOut is true, animate the grid opacity before removing
 			if (fadeOut) {
 				// Set transition for smooth fade out
-				gridContainer.style.transition = 'opacity 0.5s ease';
-				gridContainer.style.opacity = '0';
+				grid.style.transition = 'opacity 0.5s ease';
+				grid.style.opacity = '0';
 				
 				// Wait for the transition to complete before removing the element
 				setTimeout(() => {
-					gridContainer.remove();
+					grid.remove();
 				}, 500);
 				
 				return { 
@@ -869,7 +929,7 @@ const fns = {
 				};
 			} else {
 				// Remove the grid immediately
-				gridContainer.remove();
+				grid.remove();
 				
 				return { 
 					success: true, 
@@ -880,7 +940,48 @@ const fns = {
 		} catch (error) {
 			return { 
 				success: false, 
-				error: error.message || 'An error occurred while deleting the grid'
+				error: error.message || 'An error occurred while removing the grid layout'
+			};
+		}
+	},
+	
+	// Add grid item remove function
+	removeGridItem: ({ itemId, fadeOut = true }) => {
+		const item = document.getElementById(itemId);
+		if (!item) {
+			return { success: false, error: 'Grid item not found' };
+		}
+		
+		try {
+			if (fadeOut) {
+				// Set transition for smooth fade out
+				item.style.transition = 'opacity 0.5s ease';
+				item.style.opacity = '0';
+				
+				// Wait for the transition to complete before removing the element
+				setTimeout(() => {
+					item.remove();
+				}, 500);
+				
+				return { 
+					success: true, 
+					itemId: itemId,
+					animated: true
+				};
+			} else {
+				// Remove the item immediately
+				item.remove();
+				
+				return { 
+					success: true, 
+					itemId: itemId,
+					animated: false
+				};
+			}
+		} catch (error) {
+			return { 
+				success: false, 
+				error: error.message || 'An error occurred while removing the grid item'
 			};
 		}
 	},
@@ -943,431 +1044,7 @@ const fns = {
 		}
 		
 		return { success: false, error: 'Invalid selection range or unsupported format' };
-	},
-	// New responsive layout functions
-	createLayoutContainer: ({ containerId, type, elementId }) => {
-		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
-		if (!targetElement) {
-			return { success: false, error: 'Target element not found' };
-		}
-		
-		// Create container element
-		const container = document.createElement('div');
-		
-		// Ensure the container has an ID
-		const actualContainerId = containerId || generateUniqueId('layout');
-		container.id = actualContainerId;
-		
-		// Set layout type
-		container.style.display = type === 'grid' ? 'grid' : 'flex';
-		
-		// Set additional basic styles
-		if (type === 'flex') {
-			container.style.flexWrap = 'wrap';
-			container.style.width = '100%';
-		} else if (type === 'grid') {
-			container.style.width = '100%';
-		}
-		
-		// Add container to the target element
-		targetElement.appendChild(container);
-		
-		return { 
-			success: true, 
-			containerId: actualContainerId, 
-			type
-		};
-	},
-	
-	createColumnLayout: ({ containerId, columns, gap, breakpoints }) => {
-		const container = document.getElementById(containerId);
-		if (!container) {
-			return { success: false, error: `Container with ID ${containerId} not found` };
-		}
-		
-		// Set up flex container
-		container.style.display = 'flex';
-		container.style.flexWrap = 'wrap';
-		container.style.gap = gap || '20px';
-		container.style.width = '100%';
-		
-		// Define number of columns and their widths
-		const numColumns = parseInt(columns) || 3;
-		
-		// Create a unique class name for this layout's columns
-		const columnClassName = `column-${containerId}`;
-		
-		// Create a style element for the column styles
-		const styleElement = document.createElement('style');
-		
-		let columnCss = `.${columnClassName} {
-			flex: 1 1 calc((100% - ${(numColumns-1) * (parseInt(gap) || 20)}px) / ${numColumns});
-		}`;
-		
-		// Add responsive breakpoints
-		if (breakpoints && Array.isArray(breakpoints)) {
-			breakpoints.forEach(bp => {
-				if (bp.maxWidth && bp.columns) {
-					const colWidth = bp.columns === 1 ? '100%' : 
-						`calc((100% - ${(bp.columns-1) * (parseInt(gap) || 20)}px) / ${bp.columns})`;
-					
-					columnCss += `
-					@media (max-width: ${bp.maxWidth}) {
-						.${columnClassName} {
-							flex: 1 1 ${colWidth};
-						}
-					}`;
-				}
-			});
-		}
-		
-		styleElement.textContent = columnCss;
-		document.head.appendChild(styleElement);
-		
-		// Store metadata for this layout
-		container.dataset.layoutType = 'columns';
-		container.dataset.columnClass = columnClassName;
-		
-		return { 
-			success: true, 
-			containerId,
-			columnClassName,
-			numberOfColumns: numColumns
-		};
-	},
-	
-	createGridLayout: ({ containerId, rows, columns, areas, gap }) => {
-		const container = document.getElementById(containerId);
-		if (!container) {
-			return { success: false, error: `Container with ID ${containerId} not found` };
-		}
-		
-		// Set up grid container
-		container.style.display = 'grid';
-		
-		// Set gap
-		if (gap) {
-			container.style.gap = gap;
-		}
-		
-		// Setup grid template columns
-		if (columns) {
-			if (typeof columns === 'number' || !isNaN(parseInt(columns))) {
-				// Equal columns
-				container.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
-			} else if (Array.isArray(columns)) {
-				// Custom column widths
-				container.style.gridTemplateColumns = columns.join(' ');
-			} else {
-				// Direct string value
-				container.style.gridTemplateColumns = columns;
-			}
-		}
-		
-		// Setup grid template rows
-		if (rows) {
-			if (typeof rows === 'number' || !isNaN(parseInt(rows))) {
-				// Equal rows
-				container.style.gridTemplateRows = `repeat(${rows}, auto)`;
-			} else if (Array.isArray(rows)) {
-				// Custom row heights
-				container.style.gridTemplateRows = rows.join(' ');
-			} else {
-				// Direct string value
-				container.style.gridTemplateRows = rows;
-			}
-		}
-		
-		// Setup named grid areas
-		if (areas && Array.isArray(areas)) {
-			container.style.gridTemplateAreas = areas
-				.map(row => `"${row}"`)
-				.join(' ');
-		}
-		
-		// Store metadata
-		container.dataset.layoutType = 'grid';
-		
-		return { 
-			success: true, 
-			containerId,
-			gridColumns: columns,
-			gridRows: rows,
-			gridAreas: areas
-		};
-	},
-	
-	addElementToLayout: ({ element, containerId, position }) => {
-		const container = document.getElementById(containerId);
-		if (!container) {
-			return { success: false, error: `Container with ID ${containerId} not found` };
-		}
-		
-		// Create the element based on the type
-		let newElement;
-		if (element.type === 'text') {
-			newElement = document.createElement('p');
-			newElement.textContent = element.content;
-		} else if (element.type === 'div') {
-			newElement = document.createElement('div');
-			if (element.content) newElement.textContent = element.content;
-		} else if (element.type === 'heading') {
-			const level = element.level || 2;
-			newElement = document.createElement(`h${level}`);
-			newElement.textContent = element.content;
-		} else if (element.type === 'button') {
-			newElement = document.createElement('button');
-			newElement.textContent = element.content;
-		} else if (element.type === 'image') {
-			newElement = document.createElement('img');
-			newElement.src = element.src;
-			newElement.alt = element.alt || '';
-		} else if (element.type === 'custom') {
-			newElement = document.createElement(element.tagName || 'div');
-			if (element.content) {
-				newElement.innerHTML = element.content;
-			}
-		} else {
-			// Default to div
-			newElement = document.createElement('div');
-		}
-		
-		// Ensure the element has an ID
-		const elementId = element.id || generateUniqueId(element.type);
-		newElement.id = elementId;
-		
-		// Add classes if provided
-		if (element.className) {
-			newElement.className = element.className;
-		}
-		
-		// Add layout-specific class if it's a column layout
-		if (container.dataset.layoutType === 'columns' && container.dataset.columnClass) {
-			newElement.classList.add(container.dataset.columnClass);
-		}
-		
-		// Position the element in the layout
-		if (position) {
-			if (container.dataset.layoutType === 'grid') {
-				// Grid positioning
-				if (position.row) {
-					newElement.style.gridRow = position.row;
-				}
-				if (position.column) {
-					newElement.style.gridColumn = position.column;
-				}
-				if (position.area) {
-					newElement.style.gridArea = position.area;
-				}
-			} else {
-				// Flex positioning
-				if (position.order) {
-					newElement.style.order = position.order;
-				}
-				if (position.grow) {
-					newElement.style.flexGrow = position.grow;
-				}
-				if (position.shrink) {
-					newElement.style.flexShrink = position.shrink;
-				}
-				if (position.basis) {
-					newElement.style.flexBasis = position.basis;
-				}
-			}
-		}
-		
-		// Add styles if provided
-		if (element.styles && typeof element.styles === 'object') {
-			Object.keys(element.styles).forEach(key => {
-				newElement.style[key] = element.styles[key];
-			});
-		}
-		
-		// Add the element to the container
-		container.appendChild(newElement);
-		
-		return { 
-			success: true, 
-			elementId,
-			containerId
-		};
-	},
-	
-	setResponsiveRules: ({ elementId, rules }) => {
-		const element = document.getElementById(elementId);
-		if (!element) {
-			return { success: false, error: `Element with ID ${elementId} not found` };
-		}
-		
-		if (!rules || !Array.isArray(rules) || rules.length === 0) {
-			return { success: false, error: 'No valid responsive rules provided' };
-		}
-		
-		// Create a unique ID for the style element
-		const styleId = `responsive-${elementId}-${Date.now()}`;
-		
-		// Create a style element for responsive rules
-		const styleElement = document.createElement('style');
-		styleElement.id = styleId;
-		
-		let cssRules = '';
-		
-		// Process each responsive rule
-		rules.forEach((rule, index) => {
-			let mediaQuery = '';
-			
-			// Create the media query
-			if (rule.maxWidth) {
-				mediaQuery = `@media (max-width: ${rule.maxWidth})`;
-			} else if (rule.minWidth) {
-				mediaQuery = `@media (min-width: ${rule.minWidth})`;
-			} else if (rule.media) {
-				mediaQuery = `@media ${rule.media}`;
-			}
-			
-			if (!mediaQuery) {
-				return; // Skip invalid rules
-			}
-			
-			// Create CSS for this rule
-			let cssProperties = '';
-			if (rule.styles && typeof rule.styles === 'object') {
-				Object.keys(rule.styles).forEach(key => {
-					// Convert camelCase to kebab-case for CSS properties
-					const property = key.replace(/([A-Z])/g, '-$1').toLowerCase();
-					cssProperties += `${property}: ${rule.styles[key]}; `;
-				});
-			}
-			
-			if (cssProperties) {
-				cssRules += `
-				${mediaQuery} {
-					#${elementId} {
-						${cssProperties}
-					}
-				}`;
-			}
-		});
-		
-		styleElement.textContent = cssRules;
-		document.head.appendChild(styleElement);
-		
-		// Store the style element ID for potential future updates
-		element.dataset.responsiveStyleId = styleId;
-		
-		return { 
-			success: true, 
-			elementId,
-			styleId,
-			rulesApplied: rules.length
-		};
-	},
-	
-	// Image generation function
-	generateImage: async ({ prompt, size, quality, style, elementId }) => {
-		try {
-			// Create a loading placeholder
-			const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
-			if (!targetElement) {
-				return { success: false, error: 'Target element not found' };
-			}
-			
-			// Create image container with loading indicator
-			const imageContainer = document.createElement('div');
-			const containerId = generateUniqueId('img-container');
-			imageContainer.id = containerId;
-			imageContainer.style.position = 'relative';
-			imageContainer.style.minHeight = '200px';
-			imageContainer.style.display = 'flex';
-			imageContainer.style.justifyContent = 'center';
-			imageContainer.style.alignItems = 'center';
-			imageContainer.textContent = 'Generating image...';
-			
-			targetElement.appendChild(imageContainer);
-			
-			// Make API request to generate image
-			const response = await fetch('/api/generate-image', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					prompt,
-					size: size || '1024x1024', // Default size
-					quality: quality || 'standard', // 'standard' or 'hd'
-					style: style || 'vivid', // 'vivid' or 'natural'
-				}),
-			});
-			
-			if (!response.ok) {
-				const errorData = await response.json();
-				imageContainer.textContent = 'Image generation failed';
-				return { 
-					success: false, 
-					error: errorData.error || 'Failed to generate image',
-					containerId 
-				};
-			}
-			
-			const data = await response.json();
-			
-			// Create and display the generated image
-			imageContainer.textContent = '';
-			const img = document.createElement('img');
-			img.src = data.url;
-			img.alt = prompt;
-			img.style.maxWidth = '100%';
-			img.style.height = 'auto';
-			img.id = generateUniqueId('generated-img');
-			
-			imageContainer.appendChild(img);
-			
-			return { 
-				success: true, 
-				imageUrl: data.url, 
-				containerId,
-				imageId: img.id 
-			};
-		} catch (error) {
-			console.error('Image generation error:', error);
-			return { 
-				success: false, 
-				error: error.message || 'An error occurred during image generation' 
-			};
-		}
-	},
-	
-	// Simplified image placeholder (when generation is not available)
-	createImagePlaceholder: ({ text, width, height, elementId }) => {
-		const targetElement = elementId ? document.getElementById(elementId) : document.querySelector('.content');
-		if (!targetElement) {
-			return { success: false, error: 'Target element not found' };
-		}
-		
-		const placeholderContainer = document.createElement('div');
-		const containerId = generateUniqueId('img-placeholder');
-		placeholderContainer.id = containerId;
-		
-		placeholderContainer.style.width = width || '300px';
-		placeholderContainer.style.height = height || '200px';
-		placeholderContainer.style.backgroundColor = '#f0f0f0';
-		placeholderContainer.style.display = 'flex';
-		placeholderContainer.style.justifyContent = 'center';
-		placeholderContainer.style.alignItems = 'center';
-		placeholderContainer.style.border = '1px solid #ddd';
-		placeholderContainer.style.fontSize = '1rem';
-		
-		placeholderContainer.textContent = text || 'Image';
-		
-		targetElement.appendChild(placeholderContainer);
-		
-		return { 
-			success: true, 
-			containerId,
-			width: width || '300px',
-			height: height || '200px'
-		};
-	},
+	}
 };
 
 // Create a WebRTC Agent
@@ -1662,6 +1339,25 @@ function configureData() {
 				},
 				{
 					type: 'function',
+					name: 'parseAndAddHTML',
+					description: 'Parses and adds HTML content to the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							html: { 
+								type: 'string', 
+								description: 'HTML content to add to the page' 
+							},
+							elementId: { 
+								type: 'string', 
+								description: 'Optional ID of the element to append to (defaults to .content)' 
+							}
+						},
+						required: ['html']
+					}
+				},
+				{
+					type: 'function',
 					name: 'listPageElements',
 					description: 'Lists all elements with IDs on the page',
 				},
@@ -1714,205 +1410,362 @@ function configureData() {
 						required: ['elementId', 'format']
 					}
 				},
-				// New responsive layout tools
-				{
-					type: 'function',
-					name: 'createLayoutContainer',
-					description: 'Creates a container with either grid or flexbox layout',
-					parameters: {
-						type: 'object',
-						properties: {
-							containerId: { type: 'string', description: 'Optional ID for the container' },
-							type: { type: 'string', description: 'Layout type: "grid" or "flex"' },
-							elementId: { type: 'string', description: 'Optional ID of the parent element to append to (defaults to .content)' }
-						},
-						required: ['type']
-					}
-				},
-				{
-					type: 'function',
-					name: 'createColumnLayout',
-					description: 'Creates a responsive column-based layout',
-					parameters: {
-						type: 'object',
-						properties: {
-							containerId: { type: 'string', description: 'ID of the container to convert to columns' },
-							columns: { 
-								type: 'integer', 
-								description: 'Number of columns in the default view'
-							},
-							gap: { type: 'string', description: 'Space between columns (e.g., "20px")' },
-							breakpoints: { 
-								type: 'array',
-								description: 'Array of responsive breakpoints and column configurations',
-								items: {
-									type: 'object',
-									properties: {
-										maxWidth: { type: 'string', description: 'Maximum screen width for this breakpoint (e.g., "768px")' },
-										columns: { type: 'integer', description: 'Number of columns at this breakpoint' }
-									}
-								}
-							}
-						},
-						required: ['containerId', 'columns']
-					}
-				},
-				{
-					type: 'function',
-					name: 'createGridLayout',
-					description: 'Sets up a complex grid layout system',
-					parameters: {
-						type: 'object',
-						properties: {
-							containerId: { type: 'string', description: 'ID of the container to make a grid' },
-							rows: { 
-								type: ['integer', 'array', 'string'], 
-								description: 'Number of rows, array of row heights, or template string'
-							},
-							columns: { 
-								type: ['integer', 'array', 'string'], 
-								description: 'Number of columns, array of column widths, or template string'
-							},
-							areas: { 
-								type: 'array',
-								description: 'Template strings for named grid areas',
-								items: { type: 'string' }
-							},
-							gap: { type: 'string', description: 'Space between grid cells (e.g., "10px" or "10px 20px")' }
-						},
-						required: ['containerId']
-					}
-				},
-				{
-					type: 'function',
-					name: 'addElementToLayout',
-					description: 'Places an element at a specific position in a layout container',
-					parameters: {
-						type: 'object',
-						properties: {
-							element: { 
-								type: 'object',
-								description: 'Element to add to the layout',
-								properties: {
-									type: { type: 'string', description: 'Element type: text, div, heading, button, image, or custom' },
-									content: { type: 'string', description: 'Text content of the element' },
-									id: { type: 'string', description: 'Optional ID for the element' },
-									className: { type: 'string', description: 'Optional CSS classes' },
-									styles: { type: 'object', description: 'Optional inline styles to apply' },
-									level: { type: 'integer', description: 'Heading level (for heading type)' },
-									src: { type: 'string', description: 'Image source URL (for image type)' },
-									alt: { type: 'string', description: 'Image alt text (for image type)' },
-									tagName: { type: 'string', description: 'Custom element tag name (for custom type)' }
-								},
-								required: ['type']
-							},
-							containerId: { type: 'string', description: 'ID of the layout container' },
-							position: { 
-								type: 'object',
-								description: 'Position in the layout (grid or flex)',
-								properties: {
-									// Grid position properties
-									row: { type: 'string', description: 'Grid row position (e.g., "1" or "1 / span 2")' },
-									column: { type: 'string', description: 'Grid column position (e.g., "1" or "1 / span 3")' },
-									area: { type: 'string', description: 'Named grid area to place element in' },
-									// Flex position properties
-									order: { type: 'integer', description: 'Order of the flex item' },
-									grow: { type: 'number', description: 'Flex grow factor' },
-									shrink: { type: 'number', description: 'Flex shrink factor' },
-									basis: { type: 'string', description: 'Flex basis value' }
-								}
-							}
-						},
-						required: ['element', 'containerId']
-					}
-				},
-				{
-					type: 'function',
-					name: 'setResponsiveRules',
-					description: 'Adds media queries for responsive behavior to an element',
-					parameters: {
-						type: 'object',
-						properties: {
-							elementId: { type: 'string', description: 'ID of the element to apply responsive rules to' },
-							rules: { 
-								type: 'array',
-								description: 'Array of responsive rules',
-								items: {
-									type: 'object',
-									properties: {
-										maxWidth: { type: 'string', description: 'Maximum screen width for this rule (e.g., "768px")' },
-										minWidth: { type: 'string', description: 'Minimum screen width for this rule (e.g., "992px")' },
-										media: { type: 'string', description: 'Custom media query' },
-										styles: { 
-											type: 'object',
-											description: 'Styles to apply at this breakpoint',
-											additionalProperties: true
-										}
-									}
-								}
-							}
-						},
-						required: ['elementId', 'rules']
-					}
-				},
-				// Image generation tools
+				// Add image generation tool
 				{
 					type: 'function',
 					name: 'generateImage',
-					description: 'Generates an image using AI based on a text prompt',
+					description: 'Generates an image using DALL-E AI and adds it to the page',
 					parameters: {
 						type: 'object',
 						properties: {
 							prompt: { 
 								type: 'string', 
-								description: 'A text description of the image you want to generate' 
+								description: 'Detailed description of the image to generate' 
 							},
-							size: { 
+							model: { 
 								type: 'string', 
-								description: 'Image size - "1024x1024" (default), "1024x1792", or "1792x1024"' 
-							},
-							quality: { 
-								type: 'string', 
-								description: 'Image quality - "standard" (default) or "hd"' 
-							},
-							style: { 
-								type: 'string', 
-								description: 'Image style - "vivid" (default) or "natural"' 
+								description: 'AI model to use for image generation (default: dall-e-3)' 
 							},
 							elementId: { 
 								type: 'string', 
-								description: 'ID of the element to append the image to (defaults to .content)' 
+								description: 'Optional ID of the element to append the image to (defaults to .content)' 
+							},
+							size: { 
+								type: 'string', 
+								description: 'Image size (default: 1024x1024). Options: 1024x1024, 1024x1792, 1792x1024' 
+							},
+							quality: { 
+								type: 'string', 
+								description: 'Image quality (default: standard). Options: standard, hd' 
 							}
 						},
 						required: ['prompt']
 					}
 				},
+				// Add image resize tool
 				{
 					type: 'function',
-					name: 'createImagePlaceholder',
-					description: 'Creates a placeholder for an image with custom text',
+					name: 'resizeImage',
+					description: 'Resizes an existing image on the page',
 					parameters: {
 						type: 'object',
 						properties: {
-							text: { 
+							imageId: { 
 								type: 'string', 
-								description: 'Text to display in the placeholder' 
+								description: 'ID of the image element to resize' 
 							},
 							width: { 
 								type: 'string', 
-								description: 'Width of the placeholder (e.g., "300px")' 
+								description: 'New width for the image (e.g., "500px", "50%")' 
 							},
 							height: { 
 								type: 'string', 
-								description: 'Height of the placeholder (e.g., "200px")' 
+								description: 'New height for the image (e.g., "300px", "auto")' 
 							},
-							elementId: { 
-								type: 'string', 
-								description: 'ID of the element to append the placeholder to (defaults to .content)' 
+							maintainAspectRatio: { 
+								type: 'boolean', 
+								description: 'Whether to maintain the aspect ratio (default: true)' 
 							}
-						}
+						},
+						required: ['imageId']
 					}
 				},
+				// Add image alignment tool
+				{
+					type: 'function',
+					name: 'alignImage',
+					description: 'Aligns an existing image on the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageId: { 
+								type: 'string', 
+								description: 'ID of the image element to align' 
+							},
+							alignment: { 
+								type: 'string', 
+								description: 'Alignment type: left, right, center, inline-start, inline-end, or none' 
+							},
+							margin: { 
+								type: 'string', 
+								description: 'Margin around the image (e.g., "10px")' 
+							}
+						},
+						required: ['imageId', 'alignment']
+					}
+				},
+				// Add image delete tool
+				{
+					type: 'function',
+					name: 'deleteImage',
+					description: 'Deletes an existing image from the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageId: { 
+								type: 'string', 
+								description: 'ID of the image element to delete' 
+							},
+							fadeOut: { 
+								type: 'boolean', 
+								description: 'Whether to animate the deletion (default: true)' 
+							}
+						},
+						required: ['imageId']
+					}
+				},
+				// Add grid layout tool
+				{
+					type: 'function',
+					name: 'createGridLayout',
+					description: 'Creates a grid layout on the page',
+					parameters: {
+						type: 'object',
+						properties: {
+							containerId: { 
+								type: 'string', 
+								description: 'ID of the container element' 
+							},
+							rows: { 
+								type: 'integer', 
+								description: 'Number of rows in the grid' 
+							},
+							columns: { 
+								type: 'integer', 
+								description: 'Number of columns in the grid' 
+							},
+							gap: { 
+								type: 'string', 
+								description: 'Gap between grid items (e.g., "10px")' 
+							},
+							gridTemplateAreas: { 
+								type: 'string', 
+								description: 'Grid template areas' 
+							},
+							gridTemplateColumns: { 
+								type: 'string', 
+								description: 'Grid template columns' 
+							},
+							gridTemplateRows: { 
+								type: 'string', 
+								description: 'Grid template rows' 
+							},
+							justifyItems: { 
+								type: 'string', 
+								description: 'Grid justify items' 
+							},
+							alignItems: { 
+								type: 'string', 
+								description: 'Grid align items' 
+							},
+							justifyContent: { 
+								type: 'string', 
+								description: 'Grid justify content' 
+							},
+							alignContent: { 
+								type: 'string', 
+								description: 'Grid align content' 
+							},
+							height: { 
+								type: 'string', 
+								description: 'Grid height' 
+							},
+							width: { 
+								type: 'string', 
+								description: 'Grid width' 
+							}
+						},
+						required: ['containerId', 'rows', 'columns']
+					}
+				},
+				// Add grid item tool
+				{
+					type: 'function',
+					name: 'addGridItem',
+					description: 'Adds a grid item to the grid',
+					parameters: {
+						type: 'object',
+						properties: {
+							gridId: { 
+								type: 'string', 
+								description: 'ID of the grid container' 
+							},
+							content: { 
+								type: 'string', 
+								description: 'Content of the grid item' 
+							},
+							gridArea: { 
+								type: 'string', 
+								description: 'Grid area for the grid item' 
+							},
+							gridColumn: { 
+								type: 'string', 
+								description: 'Grid column for the grid item' 
+							},
+							gridRow: { 
+								type: 'string', 
+								description: 'Grid row for the grid item' 
+							},
+							justifySelf: { 
+								type: 'string', 
+								description: 'Grid justify self for the grid item' 
+							},
+							alignSelf: { 
+								type: 'string', 
+								description: 'Grid align self for the grid item' 
+							},
+							className: { 
+								type: 'string', 
+								description: 'CSS class for the grid item' 
+							}
+						},
+						required: ['gridId', 'content']
+					}
+				},
+				// Add grid update tool
+				{
+					type: 'function',
+					name: 'updateGridLayout',
+					description: 'Updates the grid layout',
+					parameters: {
+						type: 'object',
+						properties: {
+							gridId: { 
+								type: 'string', 
+								description: 'ID of the grid container' 
+							},
+							rows: { 
+								type: 'integer', 
+								description: 'Number of rows in the grid' 
+							},
+							columns: { 
+								type: 'integer', 
+								description: 'Number of columns in the grid' 
+							},
+							gap: { 
+								type: 'string', 
+								description: 'Gap between grid items' 
+							},
+							gridTemplateAreas: { 
+								type: 'string', 
+								description: 'Grid template areas' 
+							},
+							gridTemplateColumns: { 
+								type: 'string', 
+								description: 'Grid template columns' 
+							},
+							gridTemplateRows: { 
+								type: 'string', 
+								description: 'Grid template rows' 
+							},
+							justifyItems: { 
+								type: 'string', 
+								description: 'Grid justify items' 
+							},
+							alignItems: { 
+								type: 'string', 
+								description: 'Grid align items' 
+							},
+							justifyContent: { 
+								type: 'string', 
+								description: 'Grid justify content' 
+							},
+							alignContent: { 
+								type: 'string', 
+								description: 'Grid align content' 
+							},
+							height: { 
+								type: 'string', 
+								description: 'Grid height' 
+							},
+							width: { 
+								type: 'string', 
+								description: 'Grid width' 
+							}
+						},
+						required: ['gridId']
+					}
+				},
+				// Add grid item update tool
+				{
+					type: 'function',
+					name: 'updateGridItem',
+					description: 'Updates a grid item',
+					parameters: {
+						type: 'object',
+						properties: {
+							itemId: { 
+								type: 'string', 
+								description: 'ID of the grid item' 
+							},
+							gridArea: { 
+								type: 'string', 
+								description: 'Grid area for the grid item' 
+							},
+							gridColumn: { 
+								type: 'string', 
+								description: 'Grid column for the grid item' 
+							},
+							gridRow: { 
+								type: 'string', 
+								description: 'Grid row for the grid item' 
+							},
+							justifySelf: { 
+								type: 'string', 
+								description: 'Grid justify self for the grid item' 
+							},
+							alignSelf: { 
+								type: 'string', 
+								description: 'Grid align self for the grid item' 
+							},
+							content: { 
+								type: 'string', 
+								description: 'Content of the grid item' 
+							}
+						},
+						required: ['itemId']
+					}
+				},
+				// Add grid remove tool
+				{
+					type: 'function',
+					name: 'removeGridLayout',
+					description: 'Removes a grid layout',
+					parameters: {
+						type: 'object',
+						properties: {
+							gridId: { 
+								type: 'string', 
+								description: 'ID of the grid container' 
+							},
+							fadeOut: { 
+								type: 'boolean', 
+								description: 'Whether to animate the removal' 
+							}
+						},
+						required: ['gridId']
+					}
+				},
+				// Add grid item remove tool
+				{
+					type: 'function',
+					name: 'removeGridItem',
+					description: 'Removes a grid item',
+					parameters: {
+						type: 'object',
+						properties: {
+							itemId: { 
+								type: 'string', 
+								description: 'ID of the grid item' 
+							},
+							fadeOut: { 
+								type: 'boolean', 
+								description: 'Whether to animate the removal' 
+							}
+						},
+						required: ['itemId']
+					}
+				}
 			],
 		},
 	};
@@ -2097,4 +1950,14 @@ fns.addText = ({ text, elementId }) => {
 	
 	// Call the original function with the processed text
 	return originalAddText({ text: processedText, elementId });
+};
+
+// Override parseAndAddHTML to use the preprocessor
+const originalParseAndAddHTML = fns.parseAndAddHTML;
+fns.parseAndAddHTML = ({ html, elementId }) => {
+	// Preprocess the HTML content
+	const processedHTML = preprocessTextContent(html);
+	
+	// Call the original function with the processed HTML
+	return originalParseAndAddHTML({ html: processedHTML, elementId });
 };
